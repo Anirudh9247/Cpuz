@@ -45,36 +45,39 @@ public class AgentWorker : Microsoft.Extensions.Hosting.BackgroundService
         {
             try
             {
-                if (!_webSocketClient.IsConnected)
-                {
-                    _logger.LogInformation("Attempting to connect to WebSocket server: {Uri}", serverUri);
-                    try
-                    {
-                        await _webSocketClient.ConnectAsync(serverUri, stoppingToken);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning("WebSocket server at {Uri} unavailable (Retrying in 5s): {Message}", serverUri, ex.Message);
-                        await Task.Delay(5000, stoppingToken);
-                        continue;
-                    }
-                }
-
+                // Harvest telemetry metrics
                 var report = await _telemetryCollector.CollectReportAsync(stoppingToken);
-                var wrapper = new TelemetryPayloadWrapper
-                {
-                    AgentVersion = "1.0.0",
-                    MessageType = "TELEMETRY_REPORT",
-                    Report = report
-                };
 
-                await _webSocketClient.SendMessageAsync(wrapper, stoppingToken);
                 _logger.LogInformation("📊 TELEMETRY HARVESTED | CPU Load: {Cpu:F1}% (Temp: {CpuTemp}°C) | Memory: {Ram:F1}% | Processes: {ProcCount} | Drives: {DriveCount}", 
                     report.Hardware?.CpuTotalUsagePercentage ?? 0, 
                     report.Hardware?.CpuTempC.HasValue == true ? $"{report.Hardware.CpuTempC.Value:F1}" : "N/A",
                     report.Hardware?.MemoryUsagePercentage ?? 0,
                     report.TotalRunningProcessesCount,
                     report.Storage?.Drives.Count ?? 0);
+
+                // Optional network transmission
+                if (!_webSocketClient.IsConnected)
+                {
+                    try
+                    {
+                        await _webSocketClient.ConnectAsync(serverUri, stoppingToken);
+                    }
+                    catch
+                    {
+                        // Background reconnect attempt
+                    }
+                }
+
+                if (_webSocketClient.IsConnected)
+                {
+                    var wrapper = new TelemetryPayloadWrapper
+                    {
+                        AgentVersion = "1.0.0",
+                        MessageType = "TELEMETRY_REPORT",
+                        Report = report
+                    };
+                    await _webSocketClient.SendMessageAsync(wrapper, stoppingToken);
+                }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -82,7 +85,7 @@ public class AgentWorker : Microsoft.Extensions.Hosting.BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "An error occurred during telemetry collection/transmission iteration.");
+                _logger.LogError(ex, "An error occurred during telemetry collection iteration.");
             }
 
             await Task.Delay(_config.MetricCollectionIntervalMs, stoppingToken);

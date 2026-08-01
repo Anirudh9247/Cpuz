@@ -13,3 +13,8 @@
 # OS Generated
 Thumbs.db
 Desktop.ini
+
+# Local reference guides and walkthroughs
+docs/Walkthrough_and_Bug_Log.md
+docs/implementation_plan.md
+docs/walkthrough.md

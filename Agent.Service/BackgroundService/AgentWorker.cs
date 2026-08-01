@@ -32,6 +32,7 @@ public class AgentWorker : Microsoft.Extensions.Hosting.BackgroundService
 
         _webSocketClient.MessageReceived += OnWebSocketMessageReceived;
         _webSocketClient.Connected += (s, e) => _logger.LogInformation("Successfully connected to WebSocket server at {Url}", _config.ServerWebSocketUrl);
+        _webSocketClient.Disconnected += (s, e) => _logger.LogWarning("WebSocket client disconnected from server.");
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)

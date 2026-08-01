@@ -116,28 +116,60 @@ public class HardwareMonitor : IHardwareMonitor, IDisposable
 
         foreach (var hardware in _computer.Hardware)
         {
-            if (hardware.HardwareType == HardwareType.Cpu)
+            InspectHardwareForSensors(hardware, metrics);
+            foreach (var sub in hardware.SubHardware)
             {
-                var tempSensor = hardware.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Temperature && s.Value.HasValue);
-                if (tempSensor?.Value != null)
-                    metrics.CpuTempC = (float)Math.Round(tempSensor.Value.Value, 1);
-
-                var loadSensor = hardware.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Load && s.Name.Contains("Total") && s.Value.HasValue);
-                if (loadSensor?.Value != null)
-                    metrics.CpuTotalUsagePercentage = (float)Math.Round(loadSensor.Value.Value, 1);
+                InspectHardwareForSensors(sub, metrics);
             }
+        }
+    }
 
-            if (hardware.HardwareType == HardwareType.GpuNvidia || 
-                hardware.HardwareType == HardwareType.GpuAmd || 
-                hardware.HardwareType == HardwareType.GpuIntel)
+    private static void InspectHardwareForSensors(IHardware hardware, HardwareMetrics metrics)
+    {
+        if (hardware.HardwareType == HardwareType.Cpu)
+        {
+            foreach (var sensor in hardware.Sensors)
             {
-                var gpuTemp = hardware.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Temperature && s.Value.HasValue);
-                if (gpuTemp?.Value != null)
-                    metrics.GpuTempC = (float)Math.Round(gpuTemp.Value.Value, 1);
-
-                var fanSensor = hardware.Sensors.FirstOrDefault(s => s.SensorType == SensorType.Fan && s.Value.HasValue);
-                if (fanSensor?.Value != null)
-                    metrics.FanRpm = (int)fanSensor.Value.Value;
+                if (sensor.SensorType == SensorType.Temperature && sensor.Value.HasValue && sensor.Value.Value > 0)
+                {
+                    if (!metrics.CpuTempC.HasValue || sensor.Name.Contains("Package", StringComparison.OrdinalIgnoreCase) || sensor.Name.Contains("Max", StringComparison.OrdinalIgnoreCase))
+                    {
+                        metrics.CpuTempC = (float)Math.Round(sensor.Value.Value, 1);
+                    }
+                }
+                else if (sensor.SensorType == SensorType.Load && sensor.Name.Contains("Total", StringComparison.OrdinalIgnoreCase) && sensor.Value.HasValue)
+                {
+                    metrics.CpuTotalUsagePercentage = (float)Math.Round(sensor.Value.Value, 1);
+                }
+            }
+        }
+        else if (hardware.HardwareType == HardwareType.GpuNvidia || 
+                 hardware.HardwareType == HardwareType.GpuAmd || 
+                 hardware.HardwareType == HardwareType.GpuIntel)
+        {
+            foreach (var sensor in hardware.Sensors)
+            {
+                if (sensor.SensorType == SensorType.Temperature && sensor.Value.HasValue && sensor.Value.Value > 0)
+                {
+                    metrics.GpuTempC = (float)Math.Round(sensor.Value.Value, 1);
+                }
+                else if (sensor.SensorType == SensorType.Fan && sensor.Value.HasValue)
+                {
+                    metrics.FanRpm = (int)sensor.Value.Value;
+                }
+            }
+        }
+        else if (hardware.HardwareType == HardwareType.Motherboard)
+        {
+            foreach (var sensor in hardware.Sensors)
+            {
+                if (sensor.SensorType == SensorType.Temperature && sensor.Value.HasValue && sensor.Value.Value > 0)
+                {
+                    if (!metrics.CpuTempC.HasValue && (sensor.Name.Contains("CPU", StringComparison.OrdinalIgnoreCase) || sensor.Name.Contains("System", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        metrics.CpuTempC = (float)Math.Round(sensor.Value.Value, 1);
+                    }
+                }
             }
         }
     }
@@ -146,6 +178,7 @@ public class HardwareMonitor : IHardwareMonitor, IDisposable
     {
         if (!OperatingSystem.IsWindows()) return null;
 
+        // 1. Try MSAcpi_ThermalZoneTemperature in root\WMI
         try
         {
             using var searcher = new ManagementObjectSearcher(@"root\WMI", "SELECT CurrentTemperature FROM MSAcpi_ThermalZoneTemperature");
@@ -160,6 +193,29 @@ public class HardwareMonitor : IHardwareMonitor, IDisposable
             }
         }
         catch { }
+
+        // 2. Try Win32_PerfFormattedData_Counters_ThermalZoneInformation in root\cimv2
+        try
+        {
+            using var searcher = new ManagementObjectSearcher(@"root\cimv2", "SELECT HighPrecisionTemperature, Temperature FROM Win32_PerfFormattedData_Counters_ThermalZoneInformation");
+            foreach (ManagementObject obj in searcher.Get())
+            {
+                if (obj["HighPrecisionTemperature"] is uint kelvinTenths && kelvinTenths > 0)
+                {
+                    double tempCelsius = (kelvinTenths / 10.0) - 273.15;
+                    if (tempCelsius > 0 && tempCelsius < 125) 
+                        return Math.Round(tempCelsius, 1);
+                }
+                if (obj["Temperature"] is uint kelvin && kelvin > 0)
+                {
+                    double tempCelsius = kelvin - 273.15;
+                    if (tempCelsius > 0 && tempCelsius < 125) 
+                        return Math.Round(tempCelsius, 1);
+                }
+            }
+        }
+        catch { }
+
         return null;
     }
 

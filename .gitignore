@@ -1,0 +1,15 @@
+# .NET Build Artifacts
+**/bin/
+**/obj/
+.vs/
+.idea/
+
+# User-specific files
+*.user
+*.userosscache
+*.sln.docstates
+*.suo
+
+# OS Generated
+Thumbs.db
+Desktop.ini

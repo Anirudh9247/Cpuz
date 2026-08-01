@@ -1,0 +1,34 @@
+namespace Agent.Core.Models;
+
+public class AgentConfig
+{
+    public string AgentId { get; set; } = Guid.NewGuid().ToString();
+    public string MachineName { get; set; } = Environment.MachineName;
+
+    // Networking
+    public string ServerWebSocketUrl { get; set; } = "ws://localhost:8080/ws";
+    public int WebSocketPort { get; set; } = 8080;
+    public int UdpDiscoveryPort { get; set; } = 8888;
+    public bool EnableUdpDiscovery { get; set; } = true;
+
+    // Staggered Polling Intervals (ms)
+    public int FastCollectionIntervalMs { get; set; } = 2000;   // CPU, RAM, GPU
+    public int SlowCollectionIntervalMs { get; set; } = 30000;  // Battery, Defender, Event Logs, SMART
+    public int MetricCollectionIntervalMs { get; set; } = 2000;
+    public int TopProcessCount { get; set; } = 10;
+
+    // Feature Flags
+    public bool EnableHardwareMonitoring { get; set; } = true;
+    public bool EnableProcessMonitoring { get; set; } = true;
+    public bool EnableStorageMonitoring { get; set; } = true;
+
+    // Configurable Alert Thresholds
+    public double CpuWarningTempC { get; set; } = 75.0;
+    public double CpuCriticalTempC { get; set; } = 85.0;
+    public double GpuWarningTempC { get; set; } = 78.0;
+    public double GpuCriticalTempC { get; set; } = 85.0;
+    public double RamWarningPercent { get; set; } = 80.0;
+    public double RamCriticalPercent { get; set; } = 90.0;
+    public int SsdWarningHealthPercent { get; set; } = 85;
+    public int SsdCriticalHealthPercent { get; set; } = 70;
+}

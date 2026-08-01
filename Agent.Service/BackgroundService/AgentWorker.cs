@@ -54,7 +54,7 @@ public class AgentWorker : Microsoft.Extensions.Hosting.BackgroundService
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(ex, "Failed to connect to WebSocket server. Retrying in 5 seconds...");
+                        _logger.LogWarning("WebSocket server at {Uri} unavailable (Retrying in 5s): {Message}", serverUri, ex.Message);
                         await Task.Delay(5000, stoppingToken);
                         continue;
                     }
@@ -69,9 +69,12 @@ public class AgentWorker : Microsoft.Extensions.Hosting.BackgroundService
                 };
 
                 await _webSocketClient.SendMessageAsync(wrapper, stoppingToken);
-                _logger.LogDebug("Telemetry report successfully transmitted. CPU: {Cpu:F1}%, Memory: {Ram:F1}%", 
+                _logger.LogInformation("📊 TELEMETRY HARVESTED | CPU Load: {Cpu:F1}% (Temp: {CpuTemp}°C) | Memory: {Ram:F1}% | Processes: {ProcCount} | Drives: {DriveCount}", 
                     report.Hardware?.CpuTotalUsagePercentage ?? 0, 
-                    report.Hardware?.MemoryUsagePercentage ?? 0);
+                    report.Hardware?.CpuTempC.HasValue == true ? $"{report.Hardware.CpuTempC.Value:F1}" : "N/A",
+                    report.Hardware?.MemoryUsagePercentage ?? 0,
+                    report.TotalRunningProcessesCount,
+                    report.Storage?.Drives.Count ?? 0);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {

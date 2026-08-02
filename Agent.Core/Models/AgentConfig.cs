@@ -22,13 +22,22 @@ public class AgentConfig
     public bool EnableProcessMonitoring { get; set; } = true;
     public bool EnableStorageMonitoring { get; set; } = true;
 
-    // Configurable Alert Thresholds
-    public double CpuWarningTempC { get; set; } = 75.0;
-    public double CpuCriticalTempC { get; set; } = 85.0;
+    // Configurable Alert & Health Thresholds
+    public double CpuWarningTempC { get; set; } = 80.0;
+    public double CpuCriticalTempC { get; set; } = 90.0;
+    public double CpuWarningLoadPercent { get; set; } = 80.0;
+    public double CpuCriticalLoadPercent { get; set; } = 90.0;
+
     public double GpuWarningTempC { get; set; } = 78.0;
     public double GpuCriticalTempC { get; set; } = 85.0;
+
     public double RamWarningPercent { get; set; } = 80.0;
     public double RamCriticalPercent { get; set; } = 90.0;
+
+    public double StorageWarningPercent { get; set; } = 85.0;
+    public double StorageCriticalPercent { get; set; } = 95.0;
     public int SsdWarningHealthPercent { get; set; } = 85;
     public int SsdCriticalHealthPercent { get; set; } = 70;
+
+    public bool DefenderAlertEnabled { get; set; } = true;
 }

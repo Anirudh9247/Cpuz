@@ -70,13 +70,18 @@ public class AgentWorker : Microsoft.Extensions.Hosting.BackgroundService
                     _ => "⚪ UNKNOWN"
                 };
 
-                _logger.LogInformation("📊 HEALTH SNAPSHOT [{StatusBadge}] Score: {Score}/100 | Alerts: {AlertCount} | CPU Load: {CpuLoad:F1}% (Temp: {CpuTemp}) | RAM: {RamLoad:F1}% | Drives: {DriveCount}",
+                double cpuLoad = snapshot.Cpu.LoadPercent.HasValue && snapshot.Cpu.LoadPercent.Value.HasValue ? snapshot.Cpu.LoadPercent.Value.Value : 0.0;
+                string cpuTempStr = snapshot.Cpu.TempC.HasValue && snapshot.Cpu.TempC.Value.HasValue ? $"{snapshot.Cpu.TempC.Value.Value:F1}°C" : "N/A";
+                double ramUsage = snapshot.Memory.UsagePercent.HasValue && snapshot.Memory.UsagePercent.Value.HasValue ? snapshot.Memory.UsagePercent.Value.Value : 0.0;
+
+                _logger.LogInformation("📊 HEALTH SNAPSHOT [{StatusBadge}] Score: {Score}/100 | Source: {Source} | Alerts: {AlertCount} | CPU Load: {CpuLoad:F1}% (Temp: {CpuTemp}) | RAM: {RamLoad:F1}% | Drives: {DriveCount}",
                     statusBadge,
                     snapshot.OverallHealthScore,
+                    snapshot.Trust.SensorSource,
                     snapshot.Alerts.Count,
-                    snapshot.Cpu.LoadPercent ?? 0,
-                    snapshot.Cpu.TempC.HasValue ? $"{snapshot.Cpu.TempC.Value:F1}°C" : "N/A",
-                    snapshot.Memory.UsagePercent ?? 0,
+                    cpuLoad,
+                    cpuTempStr,
+                    ramUsage,
                     snapshot.Drives.Count);
 
                 if (snapshot.Alerts.Count > 0)

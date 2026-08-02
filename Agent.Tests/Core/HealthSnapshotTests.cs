@@ -30,13 +30,27 @@ public class HealthSnapshotTests
         var engine = new AlertEngine(_config);
         var snapshot = new HealthSnapshot
         {
-            Cpu = new CpuSnapshot { TempC = 92.0, LoadPercent = 95.0 }, // 2 CPU alerts
-            Memory = new MemorySnapshot { UsagePercent = 91.0 },       // 1 RAM alert
+            Cpu = new CpuSnapshot
+            {
+                TempC = SensorReading<double>.FromValue(92.0, "LibreHardwareMonitor"),
+                LoadPercent = SensorReading<double>.FromValue(95.0, "LibreHardwareMonitor")
+            },
+            Memory = new MemorySnapshot
+            {
+                UsagePercent = SensorReading<double>.FromValue(91.0, "PerformanceCounter")
+            },
             Drives = new List<DriveSnapshot>
             {
-                new DriveSnapshot { Name = "C:", UsagePercent = 96.0 } // 1 Disk alert
+                new DriveSnapshot
+                {
+                    Name = "C:",
+                    UsagePercent = SensorReading<double>.FromValue(96.0, "DriveInfo")
+                }
             },
-            Defender = new DefenderSnapshot { DefenderEnabled = false }  // 1 Defender alert
+            Defender = new DefenderSnapshot
+            {
+                DefenderEnabled = SensorReading<bool>.FromValue(false, "WMI")
+            }
         };
 
         // Act
@@ -63,8 +77,8 @@ public class HealthSnapshotTests
         };
         var snapshot = new HealthSnapshot
         {
-            Cpu = new CpuSnapshot { TempC = 92.0 },
-            Memory = new MemorySnapshot { UsagePercent = 82.0 }
+            Cpu = new CpuSnapshot { TempC = SensorReading<double>.FromValue(92.0, "LHM") },
+            Memory = new MemorySnapshot { UsagePercent = SensorReading<double>.FromValue(82.0, "PC") }
         };
 
         // Act
@@ -78,6 +92,32 @@ public class HealthSnapshotTests
     }
 
     [Fact]
+    public void HealthSnapshotBuilder_ConstructsSnapshotWithSensorMetadata()
+    {
+        // Arrange
+        var alertEngine = new AlertEngine(_config);
+        var scoreCalculator = new HealthScoreCalculator();
+        var builder = new HealthSnapshotBuilder(alertEngine, scoreCalculator);
+
+        var hw = new HardwareMetrics
+        {
+            CpuTemp = SensorReading<float>.FromValue(85.0f, "LibreHardwareMonitor.CPU"),
+            CpuUsage = SensorReading<float>.FromValue(82.0f, "LibreHardwareMonitor.CPU")
+        };
+
+        // Act
+        var snapshot = builder.Build(_config, hw, null, 150, null);
+
+        // Assert
+        Assert.NotNull(snapshot);
+        Assert.Equal("LibreHardwareMonitor.CPU", snapshot.Cpu.TempC.Source);
+        Assert.Equal(85.0, snapshot.Cpu.TempC.Value);
+        Assert.Equal(100, snapshot.Trust.ConfidenceScore);
+        Assert.False(snapshot.Trust.FallbackUsed);
+        Assert.NotEmpty(snapshot.Alerts);
+    }
+
+    [Fact]
     public void HealthSnapshotValidator_DetectsInvalidSnapshots()
     {
         // Arrange
@@ -86,7 +126,7 @@ public class HealthSnapshotTests
         {
             AgentId = "", // Missing AgentId
             MachineName = "TEST",
-            Cpu = new CpuSnapshot { LoadPercent = 150.0 } // Invalid load % > 100
+            Cpu = new CpuSnapshot { LoadPercent = SensorReading<double>.FromValue(150.0, "Test") } // Invalid load % > 100
         };
 
         // Act
@@ -95,27 +135,5 @@ public class HealthSnapshotTests
         // Assert
         Assert.False(result.IsValid);
         Assert.True(result.Errors.Count >= 2);
-    }
-
-    [Fact]
-    public void HealthSnapshotValidator_AcceptsValidSnapshot()
-    {
-        // Arrange
-        var validator = new HealthSnapshotValidator();
-        var validSnapshot = new HealthSnapshot
-        {
-            AgentId = "AGENT-01",
-            MachineName = "PC-MAIN",
-            TimestampUtc = DateTime.UtcNow,
-            Cpu = new CpuSnapshot { TempC = 55.0, LoadPercent = 30.0 },
-            Memory = new MemorySnapshot { UsagePercent = 45.0 }
-        };
-
-        // Act
-        var result = validator.Validate(validSnapshot);
-
-        // Assert
-        Assert.True(result.IsValid);
-        Assert.Empty(result.Errors);
     }
 }

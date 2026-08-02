@@ -25,14 +25,14 @@ public class AlertEngine : IAlertEngine
         // 1. CPU Temperature Evaluation
         if (snapshot.Cpu.TempC.HasValue)
         {
-            double temp = snapshot.Cpu.TempC.Value;
+            double temp = snapshot.Cpu.TempC.Value!;
             if (temp >= _config.CpuCriticalTempC)
             {
                 alerts.Add(new HealthAlert
                 {
                     Severity = AlertSeverity.Critical,
                     Category = "CPU",
-                    Message = $"CPU temperature ({temp:F1}°C) exceeded critical threshold ({_config.CpuCriticalTempC}°C)",
+                    Message = $"CPU temperature ({temp:F1}°C) exceeded critical threshold ({_config.CpuCriticalTempC}°C) [Source: {snapshot.Cpu.TempC.Source}]",
                     TimestampUtc = now
                 });
             }
@@ -42,7 +42,7 @@ public class AlertEngine : IAlertEngine
                 {
                     Severity = AlertSeverity.Warning,
                     Category = "CPU",
-                    Message = $"CPU temperature ({temp:F1}°C) exceeded warning threshold ({_config.CpuWarningTempC}°C)",
+                    Message = $"CPU temperature ({temp:F1}°C) exceeded warning threshold ({_config.CpuWarningTempC}°C) [Source: {snapshot.Cpu.TempC.Source}]",
                     TimestampUtc = now
                 });
             }
@@ -51,14 +51,14 @@ public class AlertEngine : IAlertEngine
         // 2. CPU Load Evaluation
         if (snapshot.Cpu.LoadPercent.HasValue)
         {
-            double load = snapshot.Cpu.LoadPercent.Value;
+            double load = snapshot.Cpu.LoadPercent.Value!;
             if (load >= _config.CpuCriticalLoadPercent)
             {
                 alerts.Add(new HealthAlert
                 {
                     Severity = AlertSeverity.Critical,
                     Category = "CPU",
-                    Message = $"CPU utilization ({load:F1}%) exceeded critical threshold ({_config.CpuCriticalLoadPercent}%)",
+                    Message = $"CPU utilization ({load:F1}%) exceeded critical threshold ({_config.CpuCriticalLoadPercent}%) [Source: {snapshot.Cpu.LoadPercent.Source}]",
                     TimestampUtc = now
                 });
             }
@@ -68,7 +68,7 @@ public class AlertEngine : IAlertEngine
                 {
                     Severity = AlertSeverity.Warning,
                     Category = "CPU",
-                    Message = $"CPU utilization ({load:F1}%) exceeded warning threshold ({_config.CpuWarningLoadPercent}%)",
+                    Message = $"CPU utilization ({load:F1}%) exceeded warning threshold ({_config.CpuWarningLoadPercent}%) [Source: {snapshot.Cpu.LoadPercent.Source}]",
                     TimestampUtc = now
                 });
             }
@@ -77,14 +77,14 @@ public class AlertEngine : IAlertEngine
         // 3. Memory Usage Evaluation
         if (snapshot.Memory.UsagePercent.HasValue)
         {
-            double ramPercent = snapshot.Memory.UsagePercent.Value;
+            double ramPercent = snapshot.Memory.UsagePercent.Value!;
             if (ramPercent >= _config.RamCriticalPercent)
             {
                 alerts.Add(new HealthAlert
                 {
                     Severity = AlertSeverity.Critical,
                     Category = "Memory",
-                    Message = $"RAM usage ({ramPercent:F1}%) exceeded critical threshold ({_config.RamCriticalPercent}%)",
+                    Message = $"RAM usage ({ramPercent:F1}%) exceeded critical threshold ({_config.RamCriticalPercent}%) [Source: {snapshot.Memory.UsagePercent.Source}]",
                     TimestampUtc = now
                 });
             }
@@ -94,7 +94,7 @@ public class AlertEngine : IAlertEngine
                 {
                     Severity = AlertSeverity.Warning,
                     Category = "Memory",
-                    Message = $"RAM usage ({ramPercent:F1}%) exceeded warning threshold ({_config.RamWarningPercent}%)",
+                    Message = $"RAM usage ({ramPercent:F1}%) exceeded warning threshold ({_config.RamWarningPercent}%) [Source: {snapshot.Memory.UsagePercent.Source}]",
                     TimestampUtc = now
                 });
             }
@@ -103,14 +103,14 @@ public class AlertEngine : IAlertEngine
         // 4. GPU Temperature Evaluation
         if (snapshot.Gpu.TempC.HasValue)
         {
-            double gpuTemp = snapshot.Gpu.TempC.Value;
+            double gpuTemp = snapshot.Gpu.TempC.Value!;
             if (gpuTemp >= _config.GpuCriticalTempC)
             {
                 alerts.Add(new HealthAlert
                 {
                     Severity = AlertSeverity.Critical,
                     Category = "GPU",
-                    Message = $"GPU temperature ({gpuTemp:F1}°C) exceeded critical threshold ({_config.GpuCriticalTempC}°C)",
+                    Message = $"GPU temperature ({gpuTemp:F1}°C) exceeded critical threshold ({_config.GpuCriticalTempC}°C) [Source: {snapshot.Gpu.TempC.Source}]",
                     TimestampUtc = now
                 });
             }
@@ -120,7 +120,7 @@ public class AlertEngine : IAlertEngine
                 {
                     Severity = AlertSeverity.Warning,
                     Category = "GPU",
-                    Message = $"GPU temperature ({gpuTemp:F1}°C) exceeded warning threshold ({_config.GpuWarningTempC}°C)",
+                    Message = $"GPU temperature ({gpuTemp:F1}°C) exceeded warning threshold ({_config.GpuWarningTempC}°C) [Source: {snapshot.Gpu.TempC.Source}]",
                     TimestampUtc = now
                 });
             }
@@ -131,34 +131,38 @@ public class AlertEngine : IAlertEngine
         {
             foreach (var drive in snapshot.Drives)
             {
-                if (drive.UsagePercent >= _config.StorageCriticalPercent)
+                if (drive.UsagePercent.HasValue)
                 {
-                    alerts.Add(new HealthAlert
+                    double driveUsage = drive.UsagePercent.Value!;
+                    if (driveUsage >= _config.StorageCriticalPercent)
                     {
-                        Severity = AlertSeverity.Critical,
-                        Category = "Disk",
-                        Message = $"Drive {drive.Name} disk usage ({drive.UsagePercent:F1}%) exceeded critical threshold ({_config.StorageCriticalPercent}%)",
-                        TimestampUtc = now
-                    });
-                }
-                else if (drive.UsagePercent >= _config.StorageWarningPercent)
-                {
-                    alerts.Add(new HealthAlert
+                        alerts.Add(new HealthAlert
+                        {
+                            Severity = AlertSeverity.Critical,
+                            Category = "Disk",
+                            Message = $"Drive {drive.Name} disk usage ({driveUsage:F1}%) exceeded critical threshold ({_config.StorageCriticalPercent}%)",
+                            TimestampUtc = now
+                        });
+                    }
+                    else if (driveUsage >= _config.StorageWarningPercent)
                     {
-                        Severity = AlertSeverity.Warning,
-                        Category = "Disk",
-                        Message = $"Drive {drive.Name} disk usage ({drive.UsagePercent:F1}%) exceeded warning threshold ({_config.StorageWarningPercent}%)",
-                        TimestampUtc = now
-                    });
+                        alerts.Add(new HealthAlert
+                        {
+                            Severity = AlertSeverity.Warning,
+                            Category = "Disk",
+                            Message = $"Drive {drive.Name} disk usage ({driveUsage:F1}%) exceeded warning threshold ({_config.StorageWarningPercent}%)",
+                            TimestampUtc = now
+                        });
+                    }
                 }
 
-                if (drive.HealthPercent.HasValue && drive.HealthPercent.Value <= _config.SsdCriticalHealthPercent)
+                if (drive.HealthPercent.HasValue && drive.HealthPercent.Value! <= _config.SsdCriticalHealthPercent)
                 {
                     alerts.Add(new HealthAlert
                     {
                         Severity = AlertSeverity.Critical,
                         Category = "Disk",
-                        Message = $"Drive {drive.Name} SMART health health status ({drive.HealthPercent.Value}%) is critical",
+                        Message = $"Drive {drive.Name} SMART health status ({drive.HealthPercent.Value}) is critical",
                         TimestampUtc = now
                     });
                 }
@@ -176,7 +180,7 @@ public class AlertEngine : IAlertEngine
         }
 
         // 6. Security / Defender Evaluation
-        if (_config.DefenderAlertEnabled && snapshot.Defender != null && !snapshot.Defender.DefenderEnabled)
+        if (_config.DefenderAlertEnabled && snapshot.Defender != null && snapshot.Defender.DefenderEnabled.HasValue && !snapshot.Defender.DefenderEnabled.Value)
         {
             alerts.Add(new HealthAlert
             {

@@ -25,12 +25,14 @@ builder.ConfigureServices((hostContext, services) =>
     // Configuration
     services.Configure<AgentConfig>(hostContext.Configuration.GetSection("AgentConfig"));
 
-    // Core Engines & Monitors
+    // Core Pipeline & Engines
+    services.AddSingleton<ISensorPipeline, SensorPipeline>();
     services.AddSingleton<IHardwareMonitor, HardwareMonitor>();
     services.AddSingleton<IProcessMonitor, ProcessMonitor>();
     services.AddSingleton<IStorageMonitor, StorageMonitor>();
     services.AddSingleton<IAlertEngine, AlertEngine>();
     services.AddSingleton<IHealthScoreCalculator, HealthScoreCalculator>();
+    services.AddSingleton<IHealthSnapshotBuilder, HealthSnapshotBuilder>();
     services.AddSingleton<IHealthSnapshotValidator, HealthSnapshotValidator>();
     services.AddSingleton<ITelemetryCollector, TelemetryCollector>();
 

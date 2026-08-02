@@ -159,10 +159,10 @@ public class SensorPipeline : ISensorPipeline, IDisposable
 
         return new HardwareMetrics
         {
-            CpuTemp = SensorReading<float>.FromValue(cpuTemp.HasValue ? (float)cpuTemp.Value : 0f, cpuTemp.Source, cpuTemp.IsFallback, cpuTemp.ConfidenceScore),
-            CpuUsage = SensorReading<float>.FromValue(cpuLoad.HasValue ? (float)cpuLoad.Value : 0f, cpuLoad.Source, cpuLoad.IsFallback, cpuLoad.ConfidenceScore),
-            GpuTemp = SensorReading<float>.FromValue(gpuTemp.HasValue ? (float)gpuTemp.Value : 0f, gpuTemp.Source, gpuTemp.IsFallback, gpuTemp.ConfidenceScore),
-            MemoryUsage = SensorReading<float>.FromValue(memUsage.HasValue ? (float)memUsage.Value : 0f, memUsage.Source, memUsage.IsFallback, memUsage.ConfidenceScore),
+            CpuTemp = cpuTemp.HasValue ? SensorReading<float>.FromValue((float)cpuTemp.Value.Value, cpuTemp.Source, cpuTemp.IsFallback, cpuTemp.ConfidenceScore) : SensorReading<float>.Empty(cpuTemp.Source),
+            CpuUsage = cpuLoad.HasValue ? SensorReading<float>.FromValue((float)cpuLoad.Value.Value, cpuLoad.Source, cpuLoad.IsFallback, cpuLoad.ConfidenceScore) : SensorReading<float>.Empty(cpuLoad.Source),
+            GpuTemp = gpuTemp.HasValue ? SensorReading<float>.FromValue((float)gpuTemp.Value.Value, gpuTemp.Source, gpuTemp.IsFallback, gpuTemp.ConfidenceScore) : SensorReading<float>.Empty(gpuTemp.Source),
+            MemoryUsage = memUsage.HasValue ? SensorReading<float>.FromValue((float)memUsage.Value.Value, memUsage.Source, memUsage.IsFallback, memUsage.ConfidenceScore) : SensorReading<float>.Empty(memUsage.Source),
             LogicalProcessorCount = Environment.ProcessorCount,
             TotalPhysicalMemoryBytes = totalBytes,
             AvailablePhysicalMemoryBytes = availBytes,

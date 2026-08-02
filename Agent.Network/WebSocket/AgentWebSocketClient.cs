@@ -9,6 +9,7 @@ public class AgentWebSocketClient : IAgentWebSocketClient
     private ClientWebSocket? _clientWebSocket;
     private readonly SemaphoreSlim _sendSemaphore = new(1, 1);
     private CancellationTokenSource? _receiveCts;
+    private bool _wasConnected = false;
 
     public bool IsConnected => _clientWebSocket?.State == WebSocketState.Open;
 
@@ -26,6 +27,7 @@ public class AgentWebSocketClient : IAgentWebSocketClient
         try
         {
             await _clientWebSocket.ConnectAsync(serverUri, cancellationToken);
+            _wasConnected = true;
             Connected?.Invoke(this, EventArgs.Empty);
 
             _receiveCts = new CancellationTokenSource();
@@ -33,7 +35,11 @@ public class AgentWebSocketClient : IAgentWebSocketClient
         }
         catch
         {
-            Disconnected?.Invoke(this, EventArgs.Empty);
+            if (_wasConnected)
+            {
+                _wasConnected = false;
+                Disconnected?.Invoke(this, EventArgs.Empty);
+            }
             throw;
         }
     }
@@ -64,7 +70,11 @@ public class AgentWebSocketClient : IAgentWebSocketClient
             _clientWebSocket = null;
         }
 
-        Disconnected?.Invoke(this, EventArgs.Empty);
+        if (_wasConnected)
+        {
+            _wasConnected = false;
+            Disconnected?.Invoke(this, EventArgs.Empty);
+        }
     }
 
     public async Task SendMessageAsync<T>(T message, CancellationToken cancellationToken = default)
@@ -132,7 +142,11 @@ public class AgentWebSocketClient : IAgentWebSocketClient
         }
         catch
         {
-            Disconnected?.Invoke(this, EventArgs.Empty);
+            if (_wasConnected)
+            {
+                _wasConnected = false;
+                Disconnected?.Invoke(this, EventArgs.Empty);
+            }
         }
     }
 

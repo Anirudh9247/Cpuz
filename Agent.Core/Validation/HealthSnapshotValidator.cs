@@ -38,7 +38,7 @@ public class HealthSnapshotValidator : IHealthSnapshotValidator
         // 3. Validate CPU Metrics
         if (snapshot.Cpu.LoadPercent.HasValue)
         {
-            double cpuLoad = snapshot.Cpu.LoadPercent.Value!;
+            double cpuLoad = snapshot.Cpu.LoadPercent.Value.Value;
             if (double.IsNaN(cpuLoad) || double.IsInfinity(cpuLoad) || cpuLoad < 0.0 || cpuLoad > 100.0)
             {
                 result.Errors.Add($"CPU load percentage ({cpuLoad}) is out of valid range [0, 100].");
@@ -47,7 +47,7 @@ public class HealthSnapshotValidator : IHealthSnapshotValidator
 
         if (snapshot.Cpu.TempC.HasValue)
         {
-            double cpuTemp = snapshot.Cpu.TempC.Value!;
+            double cpuTemp = snapshot.Cpu.TempC.Value.Value;
             if (double.IsNaN(cpuTemp) || double.IsInfinity(cpuTemp) || cpuTemp < -50.0 || cpuTemp > 200.0)
             {
                 result.Errors.Add($"CPU temperature ({cpuTemp}°C) is physically invalid.");
@@ -57,7 +57,7 @@ public class HealthSnapshotValidator : IHealthSnapshotValidator
         // 4. Validate Memory Metrics
         if (snapshot.Memory.UsagePercent.HasValue)
         {
-            double ramPercent = snapshot.Memory.UsagePercent.Value!;
+            double ramPercent = snapshot.Memory.UsagePercent.Value.Value;
             if (double.IsNaN(ramPercent) || double.IsInfinity(ramPercent) || ramPercent < 0.0 || ramPercent > 100.0)
             {
                 result.Errors.Add($"Memory usage percentage ({ramPercent}) is out of valid range [0, 100].");
@@ -71,7 +71,7 @@ public class HealthSnapshotValidator : IHealthSnapshotValidator
             {
                 if (drive.UsagePercent.HasValue)
                 {
-                    double driveUsage = drive.UsagePercent.Value!;
+                    double driveUsage = drive.UsagePercent.Value.Value;
                     if (driveUsage < 0.0 || driveUsage > 100.0)
                     {
                         result.Errors.Add($"Drive {drive.Name} usage percentage ({driveUsage}) is out of valid range [0, 100].");

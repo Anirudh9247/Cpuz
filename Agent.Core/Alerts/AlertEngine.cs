@@ -25,7 +25,7 @@ public class AlertEngine : IAlertEngine
         // 1. CPU Temperature Evaluation
         if (snapshot.Cpu.TempC.HasValue)
         {
-            double temp = snapshot.Cpu.TempC.Value!;
+            double temp = snapshot.Cpu.TempC.Value.Value;
             if (temp >= _config.CpuCriticalTempC)
             {
                 alerts.Add(new HealthAlert
@@ -51,7 +51,7 @@ public class AlertEngine : IAlertEngine
         // 2. CPU Load Evaluation
         if (snapshot.Cpu.LoadPercent.HasValue)
         {
-            double load = snapshot.Cpu.LoadPercent.Value!;
+            double load = snapshot.Cpu.LoadPercent.Value.Value;
             if (load >= _config.CpuCriticalLoadPercent)
             {
                 alerts.Add(new HealthAlert
@@ -77,7 +77,7 @@ public class AlertEngine : IAlertEngine
         // 3. Memory Usage Evaluation
         if (snapshot.Memory.UsagePercent.HasValue)
         {
-            double ramPercent = snapshot.Memory.UsagePercent.Value!;
+            double ramPercent = snapshot.Memory.UsagePercent.Value.Value;
             if (ramPercent >= _config.RamCriticalPercent)
             {
                 alerts.Add(new HealthAlert
@@ -103,7 +103,7 @@ public class AlertEngine : IAlertEngine
         // 4. GPU Temperature Evaluation
         if (snapshot.Gpu.TempC.HasValue)
         {
-            double gpuTemp = snapshot.Gpu.TempC.Value!;
+            double gpuTemp = snapshot.Gpu.TempC.Value.Value;
             if (gpuTemp >= _config.GpuCriticalTempC)
             {
                 alerts.Add(new HealthAlert
@@ -133,7 +133,7 @@ public class AlertEngine : IAlertEngine
             {
                 if (drive.UsagePercent.HasValue)
                 {
-                    double driveUsage = drive.UsagePercent.Value!;
+                    double driveUsage = drive.UsagePercent.Value.Value;
                     if (driveUsage >= _config.StorageCriticalPercent)
                     {
                         alerts.Add(new HealthAlert
@@ -156,13 +156,13 @@ public class AlertEngine : IAlertEngine
                     }
                 }
 
-                if (drive.HealthPercent.HasValue && drive.HealthPercent.Value! <= _config.SsdCriticalHealthPercent)
+                if (drive.HealthPercent.HasValue && drive.HealthPercent.Value.Value <= _config.SsdCriticalHealthPercent)
                 {
                     alerts.Add(new HealthAlert
                     {
                         Severity = AlertSeverity.Critical,
                         Category = "Disk",
-                        Message = $"Drive {drive.Name} SMART health status ({drive.HealthPercent.Value}) is critical",
+                        Message = $"Drive {drive.Name} SMART health status ({drive.HealthPercent.Value.Value}%) is critical",
                         TimestampUtc = now
                     });
                 }
@@ -180,7 +180,7 @@ public class AlertEngine : IAlertEngine
         }
 
         // 6. Security / Defender Evaluation
-        if (_config.DefenderAlertEnabled && snapshot.Defender != null && snapshot.Defender.DefenderEnabled.HasValue && !snapshot.Defender.DefenderEnabled.Value)
+        if (_config.DefenderAlertEnabled && snapshot.Defender != null && snapshot.Defender.DefenderEnabled.HasValue && !snapshot.Defender.DefenderEnabled.Value.Value)
         {
             alerts.Add(new HealthAlert
             {

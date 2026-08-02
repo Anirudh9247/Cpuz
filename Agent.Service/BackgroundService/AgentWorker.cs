@@ -1,6 +1,7 @@
 using Agent.Core.Models;
 using Agent.Core.Processes;
 using Agent.Core.Telemetry;
+using Agent.Core.Validation;
 using Agent.Network.Json;
 using Agent.Network.WebSocket;
 using Microsoft.Extensions.Hosting;
@@ -14,6 +15,7 @@ public class AgentWorker : Microsoft.Extensions.Hosting.BackgroundService
     private readonly ITelemetryCollector _telemetryCollector;
     private readonly IProcessMonitor _processMonitor;
     private readonly IAgentWebSocketClient _webSocketClient;
+    private readonly IHealthSnapshotValidator _validator;
     private readonly AgentConfig _config;
     private readonly ILogger<AgentWorker> _logger;
 
@@ -21,12 +23,14 @@ public class AgentWorker : Microsoft.Extensions.Hosting.BackgroundService
         ITelemetryCollector telemetryCollector,
         IProcessMonitor processMonitor,
         IAgentWebSocketClient webSocketClient,
+        IHealthSnapshotValidator validator,
         IOptions<AgentConfig> configOptions,
         ILogger<AgentWorker> logger)
     {
         _telemetryCollector = telemetryCollector;
         _processMonitor = processMonitor;
         _webSocketClient = webSocketClient;
+        _validator = validator;
         _config = configOptions.Value;
         _logger = logger;
 
@@ -45,17 +49,45 @@ public class AgentWorker : Microsoft.Extensions.Hosting.BackgroundService
         {
             try
             {
-                // Harvest telemetry metrics
-                var report = await _telemetryCollector.CollectReportAsync(stoppingToken);
+                // Harvest canonical HealthSnapshot
+                var snapshot = await _telemetryCollector.CollectSnapshotAsync(stoppingToken);
 
-                _logger.LogInformation("📊 TELEMETRY HARVESTED | CPU Load: {Cpu:F1}% (Temp: {CpuTemp}°C) | Memory: {Ram:F1}% | Processes: {ProcCount} | Drives: {DriveCount}", 
-                    report.Hardware?.CpuTotalUsagePercentage ?? 0, 
-                    report.Hardware?.CpuTempC.HasValue == true ? $"{report.Hardware.CpuTempC.Value:F1}" : "N/A",
-                    report.Hardware?.MemoryUsagePercentage ?? 0,
-                    report.TotalRunningProcessesCount,
-                    report.Storage?.Drives.Count ?? 0);
+                // Task 5: Snapshot Validation
+                var validation = _validator.Validate(snapshot);
+                if (!validation.IsValid)
+                {
+                    _logger.LogWarning("⚠️ SNAPSHOT VALIDATION FAILED — Corrupted telemetry packet suppressed! Errors: {Errors}", string.Join("; ", validation.Errors));
+                    await Task.Delay(_config.MetricCollectionIntervalMs, stoppingToken);
+                    continue;
+                }
 
-                // Optional network transmission
+                // Format status badge for logging
+                string statusBadge = snapshot.OverallStatus switch
+                {
+                    OverallHealthStatus.Healthy => "🟢 HEALTHY",
+                    OverallHealthStatus.Warning => "🟡 WARNING",
+                    OverallHealthStatus.Critical => "🔴 CRITICAL",
+                    _ => "⚪ UNKNOWN"
+                };
+
+                _logger.LogInformation("📊 HEALTH SNAPSHOT [{StatusBadge}] Score: {Score}/100 | Alerts: {AlertCount} | CPU Load: {CpuLoad:F1}% (Temp: {CpuTemp}) | RAM: {RamLoad:F1}% | Drives: {DriveCount}",
+                    statusBadge,
+                    snapshot.OverallHealthScore,
+                    snapshot.Alerts.Count,
+                    snapshot.Cpu.LoadPercent ?? 0,
+                    snapshot.Cpu.TempC.HasValue ? $"{snapshot.Cpu.TempC.Value:F1}°C" : "N/A",
+                    snapshot.Memory.UsagePercent ?? 0,
+                    snapshot.Drives.Count);
+
+                if (snapshot.Alerts.Count > 0)
+                {
+                    foreach (var alert in snapshot.Alerts)
+                    {
+                        _logger.LogWarning("   🚨 ALERT [{Severity}] [{Category}] {Message}", alert.Severity, alert.Category, alert.Message);
+                    }
+                }
+
+                // Network Transmission over WebSocket
                 if (!_webSocketClient.IsConnected)
                 {
                     try
@@ -73,8 +105,8 @@ public class AgentWorker : Microsoft.Extensions.Hosting.BackgroundService
                     var wrapper = new TelemetryPayloadWrapper
                     {
                         AgentVersion = "1.0.0",
-                        MessageType = "TELEMETRY_REPORT",
-                        Report = report
+                        MessageType = "HEALTH_SNAPSHOT",
+                        Snapshot = snapshot
                     };
                     await _webSocketClient.SendMessageAsync(wrapper, stoppingToken);
                 }

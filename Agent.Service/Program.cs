@@ -1,8 +1,11 @@
+using Agent.Core.Alerts;
 using Agent.Core.Hardware;
+using Agent.Core.Health;
 using Agent.Core.Models;
 using Agent.Core.Processes;
 using Agent.Core.Storage;
 using Agent.Core.Telemetry;
+using Agent.Core.Validation;
 using Agent.Network.WebSocket;
 using Agent.Service.BackgroundService;
 using Microsoft.Extensions.Configuration;
@@ -22,10 +25,13 @@ builder.ConfigureServices((hostContext, services) =>
     // Configuration
     services.Configure<AgentConfig>(hostContext.Configuration.GetSection("AgentConfig"));
 
-    // Core Services
+    // Core Engines & Monitors
     services.AddSingleton<IHardwareMonitor, HardwareMonitor>();
     services.AddSingleton<IProcessMonitor, ProcessMonitor>();
     services.AddSingleton<IStorageMonitor, StorageMonitor>();
+    services.AddSingleton<IAlertEngine, AlertEngine>();
+    services.AddSingleton<IHealthScoreCalculator, HealthScoreCalculator>();
+    services.AddSingleton<IHealthSnapshotValidator, HealthSnapshotValidator>();
     services.AddSingleton<ITelemetryCollector, TelemetryCollector>();
 
     // Network Client

@@ -1,3 +1,4 @@
+using System.Threading.Channels;
 using Agent.Core.Models;
 using Agent.Core.Processes;
 using Agent.Core.Telemetry;
@@ -10,6 +11,12 @@ using Microsoft.Extensions.Options;
 
 namespace Agent.Service.BackgroundService;
 
+public class InboundCommandItem
+{
+    public string ClientId { get; set; } = string.Empty;
+    public string RawMessage { get; set; } = string.Empty;
+}
+
 public class AgentWorker : Microsoft.Extensions.Hosting.BackgroundService
 {
     private readonly ITelemetryCollector _telemetryCollector;
@@ -19,6 +26,7 @@ public class AgentWorker : Microsoft.Extensions.Hosting.BackgroundService
     private readonly IHealthSnapshotValidator _validator;
     private readonly AgentConfig _config;
     private readonly ILogger<AgentWorker> _logger;
+    private readonly Channel<InboundCommandItem> _commandChannel = Channel.CreateUnbounded<InboundCommandItem>();
 
     public AgentWorker(
         ITelemetryCollector telemetryCollector,
@@ -48,6 +56,9 @@ public class AgentWorker : Microsoft.Extensions.Hosting.BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("ComputerDoctor Agent Service starting up for AgentId: {AgentId}...", _config.AgentId);
+
+        // Start background Command Processor worker thread
+        _ = Task.Run(() => ProcessCommandQueueAsync(stoppingToken), stoppingToken);
 
         // Start Embedded WebSocket Server for mobile / dashboard streaming
         try
@@ -111,6 +122,14 @@ public class AgentWorker : Microsoft.Extensions.Hosting.BackgroundService
                     }
                 }
 
+                // Standardized Envelope Broadcasting
+                var envelope = new NetworkEnvelope<HealthSnapshot>
+                {
+                    Type = "TELEMETRY",
+                    SchemaVersion = 1,
+                    Payload = snapshot
+                };
+
                 var wrapper = new TelemetryPayloadWrapper
                 {
                     AgentVersion = "1.0.0",
@@ -121,7 +140,7 @@ public class AgentWorker : Microsoft.Extensions.Hosting.BackgroundService
                 // Broadcast to all connected clients on Embedded WebSocket Server
                 if (_webSocketServer.ConnectedClientCount > 0)
                 {
-                    await _webSocketServer.BroadcastAsync(wrapper, stoppingToken);
+                    await _webSocketServer.BroadcastAsync(envelope, stoppingToken);
                 }
 
                 // Transmission over outbound WebSocket Client (if configured)
@@ -167,36 +186,65 @@ public class AgentWorker : Microsoft.Extensions.Hosting.BackgroundService
         _logger.LogInformation("ComputerDoctor Agent Service has stopped.");
     }
 
-    private async void OnServerClientMessageReceived(object? sender, ClientMessageReceivedEventArgs e)
+    private void OnServerClientMessageReceived(object? sender, ClientMessageReceivedEventArgs e)
     {
-        _logger.LogInformation("Received inbound message from client [{ClientId}]: {Message}", e.ClientId, e.Message);
-        await ProcessIncomingCommandAsync(e.Message);
+        _logger.LogInformation("Enqueuing inbound command from client [{ClientId}]", e.ClientId);
+        _commandChannel.Writer.TryWrite(new InboundCommandItem { ClientId = e.ClientId, RawMessage = e.Message });
     }
 
-    private async void OnWebSocketMessageReceived(object? sender, string message)
+    private void OnWebSocketMessageReceived(object? sender, string message)
     {
-        _logger.LogInformation("Received message from outbound server: {Message}", message);
-        await ProcessIncomingCommandAsync(message);
+        _logger.LogInformation("Enqueuing message from outbound WebSocket server");
+        _commandChannel.Writer.TryWrite(new InboundCommandItem { ClientId = "OutboundServer", RawMessage = message });
     }
 
-    private async Task ProcessIncomingCommandAsync(string message)
+    private async Task ProcessCommandQueueAsync(CancellationToken cancellationToken)
     {
-        try
+        while (await _commandChannel.Reader.WaitToReadAsync(cancellationToken))
         {
-            var command = AgentJsonSerializer.Deserialize<CommandMessage>(message);
-            if (command != null && command.Command.Equals("KILL_PROCESS", StringComparison.OrdinalIgnoreCase))
+            while (_commandChannel.Reader.TryRead(out var item))
             {
-                if (command.Parameters.TryGetValue("processId", out string? pidStr) && int.TryParse(pidStr, out int pid))
+                try
                 {
-                    _logger.LogWarning("Executing command to kill process ID: {Pid}", pid);
-                    bool success = await _processMonitor.KillProcessByIdAsync(pid);
-                    _logger.LogInformation("Process kill request for PID {Pid} returned status: {Status}", pid, success);
+                    await ExecuteCommandItemAsync(item, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error executing queued command from client [{ClientId}]", item.ClientId);
                 }
             }
         }
-        catch (Exception ex)
+    }
+
+    private async Task ExecuteCommandItemAsync(InboundCommandItem item, CancellationToken cancellationToken)
+    {
+        var command = AgentJsonSerializer.Deserialize<CommandMessage>(item.RawMessage);
+        if (command != null && command.Command.Equals("KILL_PROCESS", StringComparison.OrdinalIgnoreCase))
         {
-            _logger.LogError(ex, "Failed to parse or execute incoming command message.");
+            if (command.Parameters.TryGetValue("processId", out string? pidStr) && int.TryParse(pidStr, out int pid))
+            {
+                _logger.LogWarning("⚡ [Async Queue Worker] Executing process termination for PID: {Pid}", pid);
+                bool success = await _processMonitor.KillProcessByIdAsync(pid);
+                _logger.LogInformation("⚡ Process termination PID {Pid} result: {Status}", pid, success);
+
+                // Send ACK response envelope back to clients
+                var ackEnvelope = new NetworkEnvelope<CommandAckPayload>
+                {
+                    Type = "COMMAND_ACK",
+                    SchemaVersion = 1,
+                    Payload = new CommandAckPayload
+                    {
+                        Command = "KILL_PROCESS",
+                        Success = success,
+                        ResultMessage = success ? $"Process {pid} terminated successfully." : $"Failed to terminate process {pid}."
+                    }
+                };
+
+                if (_webSocketServer.ConnectedClientCount > 0)
+                {
+                    await _webSocketServer.BroadcastAsync(ackEnvelope, cancellationToken);
+                }
+            }
         }
     }
 }

@@ -2,6 +2,8 @@ namespace Agent.Core.Models;
 
 public class AgentConfig
 {
+    private string _apiKey = "ComputerDoctorSecretKey123";
+
     public string AgentId { get; set; } = Guid.NewGuid().ToString();
     public string MachineName { get; set; } = Environment.MachineName;
 
@@ -10,7 +12,19 @@ public class AgentConfig
     public int WebSocketPort { get; set; } = 8080;
     public int UdpDiscoveryPort { get; set; } = 8888;
     public bool EnableUdpDiscovery { get; set; } = true;
-    public string ApiKey { get; set; } = "ComputerDoctorSecretKey123";
+
+    /// <summary>
+    /// Preshared API key for WebSocket command authentication.
+    /// Prefers the environment variable COMPUTERDOCTOR_API_KEY if present.
+    /// Note: Production deployment will replace static pre-shared keys with dynamic per-device pairing tokens in Sprint 3.
+    /// </summary>
+    public string ApiKey
+    {
+        get => !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("COMPUTERDOCTOR_API_KEY"))
+            ? Environment.GetEnvironmentVariable("COMPUTERDOCTOR_API_KEY")!
+            : _apiKey;
+        set => _apiKey = value;
+    }
 
     // Staggered Polling Intervals (ms)
     public int FastCollectionIntervalMs { get; set; } = 2000;   // CPU, RAM, GPU

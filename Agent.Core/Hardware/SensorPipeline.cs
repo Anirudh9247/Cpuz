@@ -13,9 +13,9 @@ public class SensorPipeline : ISensorPipeline, IDisposable
     private readonly bool _isLhmInitialized;
     private PerformanceCounter? _ramCounter;
 
-    // Cache timestamps for slow sensors
+    // Cache timestamps for slow fallback sensors (Short recovery TTL: 5s)
     private DateTime _lastWmiCpuTempCheck = DateTime.MinValue;
-    private float? _cachedWmiCpuTemp = null;
+    private double? _cachedWmiCpuTemp = null;
 
     public SensorPipeline()
     {
@@ -53,161 +53,189 @@ public class SensorPipeline : ISensorPipeline, IDisposable
         }
     }
 
-    public Task<HardwareMetrics> HarvestMetricsAsync(CancellationToken cancellationToken = default)
+    public Task<SensorReading<double>> ReadCpuTempAsync(CancellationToken cancellationToken = default)
     {
-        var metrics = new HardwareMetrics
-        {
-            LogicalProcessorCount = Environment.ProcessorCount,
-            SystemUptime = TimeSpan.FromMilliseconds(Environment.TickCount64),
-            OperatingSystem = RuntimeInformation.OSDescription,
-            CpuArchitecture = RuntimeInformation.ProcessArchitecture.ToString()
-        };
-
-        // 1. Primary Source: LibreHardwareMonitor Traversal
+        // 1. Primary: LHM
         if (_isLhmInitialized && _computer != null && _visitor != null)
         {
             try
             {
                 _computer.Accept(_visitor);
-                ReadFromLhm(metrics);
+                var lhmReading = GetLhmCpuTemp();
+                if (lhmReading.HasValue) return Task.FromResult(lhmReading);
             }
-            catch
-            {
-                // Primary LHM traversal exception handled safely
-            }
+            catch { }
         }
 
-        // 2. Field-by-Field Fallback Pipeline
-
-        // CPU Temperature Fallback (LHM -> WMI)
-        if (!metrics.CpuTemp.HasValue)
+        // 2. Secondary Fallback: WMI (5s Recovery TTL)
+        double? wmiTemp = ReadCpuTempFromWmiWithCache();
+        if (wmiTemp.HasValue)
         {
-            float? wmiTemp = ReadCpuTempFromWmiWithCache();
-            if (wmiTemp.HasValue)
-            {
-                metrics.CpuTemp = SensorReading<float>.FromValue(wmiTemp.Value, "WMI.ThermalZone", isFallback: true);
-            }
+            return Task.FromResult(SensorReading<double>.FromValue(wmiTemp.Value, "WMI.ThermalZone", isFallback: true));
         }
 
-        // CPU Usage Fallback (LHM -> WMI)
-        if (!metrics.CpuUsage.HasValue)
+        return Task.FromResult(SensorReading<double>.Empty("Unavailable"));
+    }
+
+    public Task<SensorReading<double>> ReadCpuLoadAsync(CancellationToken cancellationToken = default)
+    {
+        if (_isLhmInitialized && _computer != null && _visitor != null)
         {
-            float? wmiLoad = ReadCpuLoadFromWmi();
-            if (wmiLoad.HasValue)
+            try
             {
-                metrics.CpuUsage = SensorReading<float>.FromValue(wmiLoad.Value, "WMI.Win32_Processor", isFallback: true);
+                _computer.Accept(_visitor);
+                var lhmReading = GetLhmCpuLoad();
+                if (lhmReading.HasValue) return Task.FromResult(lhmReading);
             }
+            catch { }
         }
 
-        // Memory Usage Calculation
+        double? wmiLoad = ReadCpuLoadFromWmi();
+        if (wmiLoad.HasValue)
+        {
+            return Task.FromResult(SensorReading<double>.FromValue(wmiLoad.Value, "WMI.Win32_Processor", isFallback: true));
+        }
+
+        return Task.FromResult(SensorReading<double>.Empty("Unavailable"));
+    }
+
+    public Task<SensorReading<double>> ReadGpuTempAsync(CancellationToken cancellationToken = default)
+    {
+        if (_isLhmInitialized && _computer != null && _visitor != null)
+        {
+            try
+            {
+                _computer.Accept(_visitor);
+                var lhmReading = GetLhmGpuTemp();
+                if (lhmReading.HasValue) return Task.FromResult(lhmReading);
+            }
+            catch { }
+        }
+
+        return Task.FromResult(SensorReading<double>.Empty("Unavailable"));
+    }
+
+    public Task<SensorReading<double>> ReadMemoryUsageAsync(CancellationToken cancellationToken = default)
+    {
         var gcInfo = GC.GetGCMemoryInfo();
-        metrics.TotalPhysicalMemoryBytes = gcInfo.TotalAvailableMemoryBytes > 0
-            ? gcInfo.TotalAvailableMemoryBytes
-            : 8L * 1024 * 1024 * 1024;
+        long totalBytes = gcInfo.TotalAvailableMemoryBytes > 0 ? gcInfo.TotalAvailableMemoryBytes : 8L * 1024 * 1024 * 1024;
+        long availBytes;
 
         if (OperatingSystem.IsWindows() && _ramCounter != null)
         {
             try
             {
                 float availableMb = _ramCounter.NextValue();
-                metrics.AvailablePhysicalMemoryBytes = (long)(availableMb * 1024 * 1024);
-                long usedMemoryBytes = metrics.TotalPhysicalMemoryBytes - metrics.AvailablePhysicalMemoryBytes;
-                float memUsagePercent = (float)(((double)usedMemoryBytes / metrics.TotalPhysicalMemoryBytes) * 100.0);
-
-                metrics.MemoryUsage = SensorReading<float>.FromValue(
-                    (float)Math.Round(memUsagePercent, 1),
-                    "PerformanceCounter.Memory",
-                    isFallback: false);
+                availBytes = (long)(availableMb * 1024 * 1024);
+                long usedBytes = totalBytes - availBytes;
+                double memPercent = Math.Round(((double)usedBytes / totalBytes) * 100.0, 1);
+                return Task.FromResult(SensorReading<double>.FromValue(memPercent, "PerformanceCounter.Memory", isFallback: false));
             }
             catch
             {
-                metrics.AvailablePhysicalMemoryBytes = metrics.TotalPhysicalMemoryBytes - gcInfo.HeapSizeBytes;
+                availBytes = totalBytes - gcInfo.HeapSizeBytes;
             }
         }
         else
         {
-            metrics.AvailablePhysicalMemoryBytes = metrics.TotalPhysicalMemoryBytes - gcInfo.HeapSizeBytes;
-            long usedMemoryBytes = metrics.TotalPhysicalMemoryBytes - metrics.AvailablePhysicalMemoryBytes;
-            float memUsagePercent = (float)(((double)usedMemoryBytes / metrics.TotalPhysicalMemoryBytes) * 100.0);
-
-            metrics.MemoryUsage = SensorReading<float>.FromValue((float)Math.Round(memUsagePercent, 1), "GC.MemoryInfo", isFallback: true);
+            availBytes = totalBytes - gcInfo.HeapSizeBytes;
         }
 
-        return Task.FromResult(metrics);
+        long usedRam = totalBytes - availBytes;
+        double usagePercent = Math.Round(((double)usedRam / totalBytes) * 100.0, 1);
+        return Task.FromResult(SensorReading<double>.FromValue(usagePercent, "GC.MemoryInfo", isFallback: true));
     }
 
-    private void ReadFromLhm(HardwareMetrics metrics)
+    public async Task<HardwareMetrics> HarvestMetricsAsync(CancellationToken cancellationToken = default)
     {
-        if (_computer == null) return;
+        var cpuTemp = await ReadCpuTempAsync(cancellationToken);
+        var cpuLoad = await ReadCpuLoadAsync(cancellationToken);
+        var gpuTemp = await ReadGpuTempAsync(cancellationToken);
+        var memUsage = await ReadMemoryUsageAsync(cancellationToken);
+
+        var gcInfo = GC.GetGCMemoryInfo();
+        long totalBytes = gcInfo.TotalAvailableMemoryBytes > 0 ? gcInfo.TotalAvailableMemoryBytes : 8L * 1024 * 1024 * 1024;
+        long availBytes = (long)((1.0 - (memUsage.Value ?? 0.0) / 100.0) * totalBytes);
+
+        return new HardwareMetrics
+        {
+            CpuTemp = SensorReading<float>.FromValue(cpuTemp.HasValue ? (float)cpuTemp.Value : 0f, cpuTemp.Source, cpuTemp.IsFallback),
+            CpuUsage = SensorReading<float>.FromValue(cpuLoad.HasValue ? (float)cpuLoad.Value : 0f, cpuLoad.Source, cpuLoad.IsFallback),
+            GpuTemp = SensorReading<float>.FromValue(gpuTemp.HasValue ? (float)gpuTemp.Value : 0f, gpuTemp.Source, gpuTemp.IsFallback),
+            MemoryUsage = SensorReading<float>.FromValue(memUsage.HasValue ? (float)memUsage.Value : 0f, memUsage.Source, memUsage.IsFallback),
+            LogicalProcessorCount = Environment.ProcessorCount,
+            TotalPhysicalMemoryBytes = totalBytes,
+            AvailablePhysicalMemoryBytes = availBytes,
+            SystemUptime = TimeSpan.FromMilliseconds(Environment.TickCount64),
+            OperatingSystem = RuntimeInformation.OSDescription,
+            CpuArchitecture = RuntimeInformation.ProcessArchitecture.ToString()
+        };
+    }
+
+    private SensorReading<double> GetLhmCpuTemp()
+    {
+        if (_computer == null) return SensorReading<double>.Empty();
 
         foreach (var hardware in _computer.Hardware)
         {
-            InspectHardwareForSensors(hardware, metrics);
-            foreach (var sub in hardware.SubHardware)
+            if (hardware.HardwareType == HardwareType.Cpu)
             {
-                InspectHardwareForSensors(sub, metrics);
-            }
-        }
-    }
-
-    private static void InspectHardwareForSensors(IHardware hardware, HardwareMetrics metrics)
-    {
-        if (hardware.HardwareType == HardwareType.Cpu)
-        {
-            foreach (var sensor in hardware.Sensors)
-            {
-                if (sensor.SensorType == SensorType.Temperature && sensor.Value.HasValue && sensor.Value.Value > 0)
+                foreach (var sensor in hardware.Sensors)
                 {
-                    if (!metrics.CpuTemp.HasValue || sensor.Name.Contains("Package", StringComparison.OrdinalIgnoreCase) || sensor.Name.Contains("Max", StringComparison.OrdinalIgnoreCase))
+                    if (sensor.SensorType == SensorType.Temperature && sensor.Value.HasValue && sensor.Value.Value > 0)
                     {
-                        float val = (float)Math.Round(sensor.Value.Value, 1);
-                        metrics.CpuTemp = SensorReading<float>.FromValue(val, "LibreHardwareMonitor.CPU", isFallback: false);
-                    }
-                }
-                else if (sensor.SensorType == SensorType.Load && sensor.Name.Contains("Total", StringComparison.OrdinalIgnoreCase) && sensor.Value.HasValue)
-                {
-                    float val = (float)Math.Round(sensor.Value.Value, 1);
-                    metrics.CpuUsage = SensorReading<float>.FromValue(val, "LibreHardwareMonitor.CPU", isFallback: false);
-                }
-            }
-        }
-        else if (hardware.HardwareType == HardwareType.GpuNvidia ||
-                 hardware.HardwareType == HardwareType.GpuAmd ||
-                 hardware.HardwareType == HardwareType.GpuIntel)
-        {
-            foreach (var sensor in hardware.Sensors)
-            {
-                if (sensor.SensorType == SensorType.Temperature && sensor.Value.HasValue && sensor.Value.Value > 0)
-                {
-                    float val = (float)Math.Round(sensor.Value.Value, 1);
-                    metrics.GpuTemp = SensorReading<float>.FromValue(val, $"LibreHardwareMonitor.{hardware.HardwareType}", isFallback: false);
-                }
-                else if (sensor.SensorType == SensorType.Fan && sensor.Value.HasValue)
-                {
-                    metrics.FanRpm = (int)sensor.Value.Value;
-                }
-            }
-        }
-        else if (hardware.HardwareType == HardwareType.Motherboard)
-        {
-            foreach (var sensor in hardware.Sensors)
-            {
-                if (sensor.SensorType == SensorType.Temperature && sensor.Value.HasValue && sensor.Value.Value > 0)
-                {
-                    if (!metrics.CpuTemp.HasValue && (sensor.Name.Contains("CPU", StringComparison.OrdinalIgnoreCase) || sensor.Name.Contains("System", StringComparison.OrdinalIgnoreCase)))
-                    {
-                        float val = (float)Math.Round(sensor.Value.Value, 1);
-                        metrics.CpuTemp = SensorReading<float>.FromValue(val, "LibreHardwareMonitor.Motherboard", isFallback: false);
+                        return SensorReading<double>.FromValue(Math.Round(sensor.Value.Value, 1), "LibreHardwareMonitor.CPU", isFallback: false);
                     }
                 }
             }
         }
+        return SensorReading<double>.Empty();
     }
 
-    private float? ReadCpuTempFromWmiWithCache()
+    private SensorReading<double> GetLhmCpuLoad()
     {
-        // TTL cache 2.0 seconds for WMI thermal query
-        if ((DateTime.UtcNow - _lastWmiCpuTempCheck).TotalSeconds < 2.0)
+        if (_computer == null) return SensorReading<double>.Empty();
+
+        foreach (var hardware in _computer.Hardware)
+        {
+            if (hardware.HardwareType == HardwareType.Cpu)
+            {
+                foreach (var sensor in hardware.Sensors)
+                {
+                    if (sensor.SensorType == SensorType.Load && sensor.Name.Contains("Total", StringComparison.OrdinalIgnoreCase) && sensor.Value.HasValue)
+                    {
+                        return SensorReading<double>.FromValue(Math.Round(sensor.Value.Value, 1), "LibreHardwareMonitor.CPU", isFallback: false);
+                    }
+                }
+            }
+        }
+        return SensorReading<double>.Empty();
+    }
+
+    private SensorReading<double> GetLhmGpuTemp()
+    {
+        if (_computer == null) return SensorReading<double>.Empty();
+
+        foreach (var hardware in _computer.Hardware)
+        {
+            if (hardware.HardwareType == HardwareType.GpuNvidia || hardware.HardwareType == HardwareType.GpuAmd || hardware.HardwareType == HardwareType.GpuIntel)
+            {
+                foreach (var sensor in hardware.Sensors)
+                {
+                    if (sensor.SensorType == SensorType.Temperature && sensor.Value.HasValue && sensor.Value.Value > 0)
+                    {
+                        return SensorReading<double>.FromValue(Math.Round(sensor.Value.Value, 1), $"LibreHardwareMonitor.{hardware.HardwareType}", isFallback: false);
+                    }
+                }
+            }
+        }
+        return SensorReading<double>.Empty();
+    }
+
+    private double? ReadCpuTempFromWmiWithCache()
+    {
+        // Short recovery TTL: 5.0 seconds for fallback retries so system actively recovers back to primary LHM
+        if ((DateTime.UtcNow - _lastWmiCpuTempCheck).TotalSeconds < 5.0)
         {
             return _cachedWmiCpuTemp;
         }
@@ -217,7 +245,7 @@ public class SensorPipeline : ISensorPipeline, IDisposable
         return _cachedWmiCpuTemp;
     }
 
-    private static float? ReadCpuTempFromWmi()
+    private static double? ReadCpuTempFromWmi()
     {
         if (!OperatingSystem.IsWindows()) return null;
 
@@ -230,7 +258,7 @@ public class SensorPipeline : ISensorPipeline, IDisposable
                 {
                     double tempCelsius = (kelvinTenths / 10.0) - 273.15;
                     if (tempCelsius > 0 && tempCelsius < 125)
-                        return (float)Math.Round(tempCelsius, 1);
+                        return Math.Round(tempCelsius, 1);
                 }
             }
         }
@@ -245,7 +273,7 @@ public class SensorPipeline : ISensorPipeline, IDisposable
                 {
                     double tempCelsius = (kelvinTenths / 10.0) - 273.15;
                     if (tempCelsius > 0 && tempCelsius < 125)
-                        return (float)Math.Round(tempCelsius, 1);
+                        return Math.Round(tempCelsius, 1);
                 }
             }
         }
@@ -254,7 +282,7 @@ public class SensorPipeline : ISensorPipeline, IDisposable
         return null;
     }
 
-    private static float? ReadCpuLoadFromWmi()
+    private static double? ReadCpuLoadFromWmi()
     {
         if (!OperatingSystem.IsWindows()) return null;
 

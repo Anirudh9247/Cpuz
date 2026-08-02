@@ -219,7 +219,36 @@ public class AgentWorker : Microsoft.Extensions.Hosting.BackgroundService
     private async Task ExecuteCommandItemAsync(InboundCommandItem item, CancellationToken cancellationToken)
     {
         var command = AgentJsonSerializer.Deserialize<CommandMessage>(item.RawMessage);
-        if (command != null && command.Command.Equals("KILL_PROCESS", StringComparison.OrdinalIgnoreCase))
+        if (command == null || string.IsNullOrEmpty(command.Command)) return;
+
+        // Security Authentication Check
+        bool isAuthenticated = string.IsNullOrEmpty(_config.ApiKey) ||
+            (command.Parameters.TryGetValue("apiKey", out string? providedKey) && providedKey == _config.ApiKey);
+
+        if (!isAuthenticated)
+        {
+            _logger.LogWarning("🚨 UNAUTHORIZED COMMAND REJECTED from client [{ClientId}] for command '{Command}'", item.ClientId, command.Command);
+
+            var authFailAck = new NetworkEnvelope<CommandAckPayload>
+            {
+                Type = "COMMAND_ACK",
+                SchemaVersion = 1,
+                Payload = new CommandAckPayload
+                {
+                    Command = command.Command,
+                    Success = false,
+                    ResultMessage = "Unauthorized: Missing or invalid API key."
+                }
+            };
+
+            if (_webSocketServer.ConnectedClientCount > 0)
+            {
+                await _webSocketServer.BroadcastAsync(authFailAck, cancellationToken);
+            }
+            return;
+        }
+
+        if (command.Command.Equals("KILL_PROCESS", StringComparison.OrdinalIgnoreCase))
         {
             if (command.Parameters.TryGetValue("processId", out string? pidStr) && int.TryParse(pidStr, out int pid))
             {

@@ -5,11 +5,12 @@ public class AgentConfig
     public string AgentId { get; set; } = Guid.NewGuid().ToString();
     public string MachineName { get; set; } = Environment.MachineName;
 
-    // Networking
+    // Networking & Security
     public string ServerWebSocketUrl { get; set; } = "ws://localhost:8080/ws";
     public int WebSocketPort { get; set; } = 8080;
     public int UdpDiscoveryPort { get; set; } = 8888;
     public bool EnableUdpDiscovery { get; set; } = true;
+    public string ApiKey { get; set; } = "ComputerDoctorSecretKey123";
 
     // Staggered Polling Intervals (ms)
     public int FastCollectionIntervalMs { get; set; } = 2000;   // CPU, RAM, GPU

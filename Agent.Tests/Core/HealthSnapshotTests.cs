@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Agent.Core.Alerts;
 using Agent.Core.Health;
 using Agent.Core.Models;
@@ -131,6 +132,25 @@ public class HealthSnapshotTests
 
         // Assert
         Assert.True(snapshot2.Sequence > snapshot1.Sequence);
+    }
+
+    [Fact]
+    public void HealthSnapshotBuilder_SequenceIsMonotonic_UnderConcurrentBuilds()
+    {
+        // Arrange
+        var builder = new HealthSnapshotBuilder(new AlertEngine(_config), new HealthScoreCalculator());
+        var sequenceNumbers = new ConcurrentBag<long>();
+        int count = 100;
+
+        // Act
+        Parallel.For(0, count, _ =>
+        {
+            var snapshot = builder.Build(_config, null, null, 0, null);
+            sequenceNumbers.Add(snapshot.Sequence);
+        });
+
+        // Assert
+        Assert.Equal(count, sequenceNumbers.Distinct().Count());
     }
 
     [Fact]

@@ -7,8 +7,15 @@ public enum OverallHealthStatus
     Critical
 }
 
+/// <summary>
+/// Telemetry trust and provenance metadata.
+/// Note: ConfidenceScore represents a static source-reliability tier weight (100 = Ring 0 LHM driver, 85–90 = WMI/PerfCounter, 70 = GC/OS fallback, 0 = Unavailable), not a statistical variance estimate.
+/// </summary>
 public class TrustMetadata
 {
+    /// <summary>
+    /// Static source-reliability tier score (0–100) computed from active sensor provider weights.
+    /// </summary>
     public int ConfidenceScore { get; set; } = 100;
     public string SensorSource { get; set; } = "LibreHardwareMonitor";
     public bool FallbackUsed { get; set; } = false;

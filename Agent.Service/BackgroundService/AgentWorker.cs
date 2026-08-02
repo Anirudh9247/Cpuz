@@ -74,15 +74,17 @@ public class AgentWorker : Microsoft.Extensions.Hosting.BackgroundService
                 string cpuTempStr = snapshot.Cpu.TempC.HasValue && snapshot.Cpu.TempC.Value.HasValue ? $"{snapshot.Cpu.TempC.Value.Value:F1}°C" : "N/A";
                 double ramUsage = snapshot.Memory.UsagePercent.HasValue && snapshot.Memory.UsagePercent.Value.HasValue ? snapshot.Memory.UsagePercent.Value.Value : 0.0;
 
-                _logger.LogInformation("📊 HEALTH SNAPSHOT [{StatusBadge}] Score: {Score}/100 | Source: {Source} | Alerts: {AlertCount} | CPU Load: {CpuLoad:F1}% (Temp: {CpuTemp}) | RAM: {RamLoad:F1}% | Drives: {DriveCount}",
+                _logger.LogInformation("📊 HEALTH SNAPSHOT [{StatusBadge}] Score: {Score}/100 | Confidence: {Confidence}% | Latency: {Latency}ms | Seq: #{Seq} | Source: {Source} | Alerts: {AlertCount} | CPU: {CpuLoad:F1}% ({CpuTemp}) | RAM: {RamLoad:F1}%",
                     statusBadge,
                     snapshot.OverallHealthScore,
+                    snapshot.Trust.ConfidenceScore,
+                    snapshot.ProcessingLatencyMs,
+                    snapshot.Sequence,
                     snapshot.Trust.SensorSource,
                     snapshot.Alerts.Count,
                     cpuLoad,
                     cpuTempStr,
-                    ramUsage,
-                    snapshot.Drives.Count);
+                    ramUsage);
 
                 if (snapshot.Alerts.Count > 0)
                 {

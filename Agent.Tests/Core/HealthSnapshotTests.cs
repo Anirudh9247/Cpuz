@@ -110,11 +110,46 @@ public class HealthSnapshotTests
 
         // Assert
         Assert.NotNull(snapshot);
+        Assert.Equal(1, snapshot.SchemaVersion);
+        Assert.True(snapshot.Sequence > 0);
         Assert.Equal("LibreHardwareMonitor.CPU", snapshot.Cpu.TempC.Source);
         Assert.Equal(85.0, snapshot.Cpu.TempC.Value);
         Assert.Equal(100, snapshot.Trust.ConfidenceScore);
         Assert.False(snapshot.Trust.FallbackUsed);
         Assert.NotEmpty(snapshot.Alerts);
+    }
+
+    [Fact]
+    public void HealthSnapshotBuilder_IncrementsSequenceNumber_OnEveryBuild()
+    {
+        // Arrange
+        var builder = new HealthSnapshotBuilder(new AlertEngine(_config), new HealthScoreCalculator());
+
+        // Act
+        var snapshot1 = builder.Build(_config, null, null, 0, null);
+        var snapshot2 = builder.Build(_config, null, null, 0, null);
+
+        // Assert
+        Assert.True(snapshot2.Sequence > snapshot1.Sequence);
+    }
+
+    [Fact]
+    public void HealthSnapshotBuilder_CalculatesWeightedConfidence_WhenFallbackIsUsed()
+    {
+        // Arrange
+        var builder = new HealthSnapshotBuilder(new AlertEngine(_config), new HealthScoreCalculator());
+        var hw = new HardwareMetrics
+        {
+            CpuTemp = SensorReading<float>.FromValue(65.0f, "WMI.ThermalZone", isFallback: true, confidenceScore: 85),
+            CpuUsage = SensorReading<float>.FromValue(25.0f, "LibreHardwareMonitor.CPU", isFallback: false, confidenceScore: 100)
+        };
+
+        // Act
+        var snapshot = builder.Build(_config, hw, null, 100, null);
+
+        // Assert
+        Assert.True(snapshot.Trust.FallbackUsed);
+        Assert.InRange(snapshot.Trust.ConfidenceScore, 80, 99);
     }
 
     [Fact]

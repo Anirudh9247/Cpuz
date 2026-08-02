@@ -71,7 +71,7 @@ public class SensorPipeline : ISensorPipeline, IDisposable
         double? wmiTemp = ReadCpuTempFromWmiWithCache();
         if (wmiTemp.HasValue)
         {
-            return Task.FromResult(SensorReading<double>.FromValue(wmiTemp.Value, "WMI.ThermalZone", isFallback: true));
+            return Task.FromResult(SensorReading<double>.FromValue(wmiTemp.Value, "WMI.ThermalZone", isFallback: true, confidenceScore: 85));
         }
 
         return Task.FromResult(SensorReading<double>.Empty("Unavailable"));
@@ -93,7 +93,7 @@ public class SensorPipeline : ISensorPipeline, IDisposable
         double? wmiLoad = ReadCpuLoadFromWmi();
         if (wmiLoad.HasValue)
         {
-            return Task.FromResult(SensorReading<double>.FromValue(wmiLoad.Value, "WMI.Win32_Processor", isFallback: true));
+            return Task.FromResult(SensorReading<double>.FromValue(wmiLoad.Value, "WMI.Win32_Processor", isFallback: true, confidenceScore: 85));
         }
 
         return Task.FromResult(SensorReading<double>.Empty("Unavailable"));
@@ -129,7 +129,7 @@ public class SensorPipeline : ISensorPipeline, IDisposable
                 availBytes = (long)(availableMb * 1024 * 1024);
                 long usedBytes = totalBytes - availBytes;
                 double memPercent = Math.Round(((double)usedBytes / totalBytes) * 100.0, 1);
-                return Task.FromResult(SensorReading<double>.FromValue(memPercent, "PerformanceCounter.Memory", isFallback: false));
+                return Task.FromResult(SensorReading<double>.FromValue(memPercent, "PerformanceCounter.Memory", isFallback: false, confidenceScore: 90));
             }
             catch
             {
@@ -143,7 +143,7 @@ public class SensorPipeline : ISensorPipeline, IDisposable
 
         long usedRam = totalBytes - availBytes;
         double usagePercent = Math.Round(((double)usedRam / totalBytes) * 100.0, 1);
-        return Task.FromResult(SensorReading<double>.FromValue(usagePercent, "GC.MemoryInfo", isFallback: true));
+        return Task.FromResult(SensorReading<double>.FromValue(usagePercent, "GC.MemoryInfo", isFallback: true, confidenceScore: 70));
     }
 
     public async Task<HardwareMetrics> HarvestMetricsAsync(CancellationToken cancellationToken = default)
@@ -159,10 +159,10 @@ public class SensorPipeline : ISensorPipeline, IDisposable
 
         return new HardwareMetrics
         {
-            CpuTemp = SensorReading<float>.FromValue(cpuTemp.HasValue ? (float)cpuTemp.Value : 0f, cpuTemp.Source, cpuTemp.IsFallback),
-            CpuUsage = SensorReading<float>.FromValue(cpuLoad.HasValue ? (float)cpuLoad.Value : 0f, cpuLoad.Source, cpuLoad.IsFallback),
-            GpuTemp = SensorReading<float>.FromValue(gpuTemp.HasValue ? (float)gpuTemp.Value : 0f, gpuTemp.Source, gpuTemp.IsFallback),
-            MemoryUsage = SensorReading<float>.FromValue(memUsage.HasValue ? (float)memUsage.Value : 0f, memUsage.Source, memUsage.IsFallback),
+            CpuTemp = SensorReading<float>.FromValue(cpuTemp.HasValue ? (float)cpuTemp.Value : 0f, cpuTemp.Source, cpuTemp.IsFallback, cpuTemp.ConfidenceScore),
+            CpuUsage = SensorReading<float>.FromValue(cpuLoad.HasValue ? (float)cpuLoad.Value : 0f, cpuLoad.Source, cpuLoad.IsFallback, cpuLoad.ConfidenceScore),
+            GpuTemp = SensorReading<float>.FromValue(gpuTemp.HasValue ? (float)gpuTemp.Value : 0f, gpuTemp.Source, gpuTemp.IsFallback, gpuTemp.ConfidenceScore),
+            MemoryUsage = SensorReading<float>.FromValue(memUsage.HasValue ? (float)memUsage.Value : 0f, memUsage.Source, memUsage.IsFallback, memUsage.ConfidenceScore),
             LogicalProcessorCount = Environment.ProcessorCount,
             TotalPhysicalMemoryBytes = totalBytes,
             AvailablePhysicalMemoryBytes = availBytes,
@@ -184,7 +184,7 @@ public class SensorPipeline : ISensorPipeline, IDisposable
                 {
                     if (sensor.SensorType == SensorType.Temperature && sensor.Value.HasValue && sensor.Value.Value > 0)
                     {
-                        return SensorReading<double>.FromValue(Math.Round(sensor.Value.Value, 1), "LibreHardwareMonitor.CPU", isFallback: false);
+                        return SensorReading<double>.FromValue(Math.Round(sensor.Value.Value, 1), "LibreHardwareMonitor.CPU", isFallback: false, confidenceScore: 100);
                     }
                 }
             }
@@ -204,7 +204,7 @@ public class SensorPipeline : ISensorPipeline, IDisposable
                 {
                     if (sensor.SensorType == SensorType.Load && sensor.Name.Contains("Total", StringComparison.OrdinalIgnoreCase) && sensor.Value.HasValue)
                     {
-                        return SensorReading<double>.FromValue(Math.Round(sensor.Value.Value, 1), "LibreHardwareMonitor.CPU", isFallback: false);
+                        return SensorReading<double>.FromValue(Math.Round(sensor.Value.Value, 1), "LibreHardwareMonitor.CPU", isFallback: false, confidenceScore: 100);
                     }
                 }
             }
@@ -224,7 +224,7 @@ public class SensorPipeline : ISensorPipeline, IDisposable
                 {
                     if (sensor.SensorType == SensorType.Temperature && sensor.Value.HasValue && sensor.Value.Value > 0)
                     {
-                        return SensorReading<double>.FromValue(Math.Round(sensor.Value.Value, 1), $"LibreHardwareMonitor.{hardware.HardwareType}", isFallback: false);
+                        return SensorReading<double>.FromValue(Math.Round(sensor.Value.Value, 1), $"LibreHardwareMonitor.{hardware.HardwareType}", isFallback: false, confidenceScore: 100);
                     }
                 }
             }
@@ -234,7 +234,6 @@ public class SensorPipeline : ISensorPipeline, IDisposable
 
     private double? ReadCpuTempFromWmiWithCache()
     {
-        // Short recovery TTL: 5.0 seconds for fallback retries so system actively recovers back to primary LHM
         if ((DateTime.UtcNow - _lastWmiCpuTempCheck).TotalSeconds < 5.0)
         {
             return _cachedWmiCpuTemp;

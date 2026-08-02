@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Agent.Core.Hardware;
 using Agent.Core.Health;
 using Agent.Core.Models;
@@ -31,6 +32,8 @@ public class TelemetryCollector : ITelemetryCollector
 
     public async Task<HealthSnapshot> CollectSnapshotAsync(CancellationToken cancellationToken = default)
     {
+        var sw = Stopwatch.StartNew();
+
         HardwareMetrics? hardware = null;
         List<ProcessInfo>? topProcesses = null;
         int totalProcessCount = 0;
@@ -52,7 +55,11 @@ public class TelemetryCollector : ITelemetryCollector
             storage = await _storageMonitor.GetStorageMetricsAsync(cancellationToken);
         }
 
-        return _snapshotBuilder.Build(_config, hardware, topProcesses, totalProcessCount, storage);
+        var snapshot = _snapshotBuilder.Build(_config, hardware, topProcesses, totalProcessCount, storage);
+        sw.Stop();
+        snapshot.ProcessingLatencyMs = Math.Round(sw.Elapsed.TotalMilliseconds, 2);
+
+        return snapshot;
     }
 
     public async Task<SystemTelemetryReport> CollectReportAsync(CancellationToken cancellationToken = default)

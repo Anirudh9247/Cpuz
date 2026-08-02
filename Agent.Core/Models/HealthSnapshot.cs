@@ -2,6 +2,10 @@ namespace Agent.Core.Models;
 
 public class HealthSnapshot
 {
+    public int SchemaVersion { get; set; } = 1;
+    public long Sequence { get; set; }
+    public double ProcessingLatencyMs { get; set; }
+
     public string AgentId { get; set; } = string.Empty;
     public string MachineName { get; set; } = string.Empty;
     public DateTime TimestampUtc { get; set; } = DateTime.UtcNow;

@@ -5,6 +5,7 @@ namespace Agent.Core.Health;
 
 public class HealthSnapshotBuilder : IHealthSnapshotBuilder
 {
+    private static long _sequenceCounter = 0;
     private readonly IAlertEngine _alertEngine;
     private readonly IHealthScoreCalculator _healthScoreCalculator;
 
@@ -23,6 +24,8 @@ public class HealthSnapshotBuilder : IHealthSnapshotBuilder
     {
         var snapshot = new HealthSnapshot
         {
+            SchemaVersion = 1,
+            Sequence = Interlocked.Increment(ref _sequenceCounter),
             AgentId = config.AgentId,
             MachineName = config.MachineName,
             TimestampUtc = DateTime.UtcNow,
@@ -32,39 +35,49 @@ public class HealthSnapshotBuilder : IHealthSnapshotBuilder
 
         bool anyFallbackUsed = false;
         string mainSource = "LibreHardwareMonitor";
+        int totalConfidence = 0;
+        int sensorCount = 0;
 
         if (hardware != null)
         {
             // CPU
             if (hardware.CpuTemp.HasValue)
             {
-                snapshot.Cpu.TempC = SensorReading<double>.FromValue(hardware.CpuTemp.Value.Value, hardware.CpuTemp.Source, hardware.CpuTemp.IsFallback);
+                snapshot.Cpu.TempC = SensorReading<double>.FromValue(hardware.CpuTemp.Value.Value, hardware.CpuTemp.Source, hardware.CpuTemp.IsFallback, hardware.CpuTemp.ConfidenceScore);
                 if (hardware.CpuTemp.IsFallback) anyFallbackUsed = true;
                 mainSource = hardware.CpuTemp.Source;
+                totalConfidence += hardware.CpuTemp.ConfidenceScore;
+                sensorCount++;
             }
             if (hardware.CpuUsage.HasValue)
             {
-                snapshot.Cpu.LoadPercent = SensorReading<double>.FromValue(hardware.CpuUsage.Value.Value, hardware.CpuUsage.Source, hardware.CpuUsage.IsFallback);
+                snapshot.Cpu.LoadPercent = SensorReading<double>.FromValue(hardware.CpuUsage.Value.Value, hardware.CpuUsage.Source, hardware.CpuUsage.IsFallback, hardware.CpuUsage.ConfidenceScore);
                 if (hardware.CpuUsage.IsFallback) anyFallbackUsed = true;
+                totalConfidence += hardware.CpuUsage.ConfidenceScore;
+                sensorCount++;
             }
             snapshot.Cpu.LogicalProcessorCount = hardware.LogicalProcessorCount;
 
             // GPU
             if (hardware.GpuTemp.HasValue)
             {
-                snapshot.Gpu.TempC = SensorReading<double>.FromValue(hardware.GpuTemp.Value.Value, hardware.GpuTemp.Source, hardware.GpuTemp.IsFallback);
+                snapshot.Gpu.TempC = SensorReading<double>.FromValue(hardware.GpuTemp.Value.Value, hardware.GpuTemp.Source, hardware.GpuTemp.IsFallback, hardware.GpuTemp.ConfidenceScore);
                 if (hardware.GpuTemp.IsFallback) anyFallbackUsed = true;
+                totalConfidence += hardware.GpuTemp.ConfidenceScore;
+                sensorCount++;
             }
 
             // Memory
             if (hardware.MemoryUsage.HasValue)
             {
-                snapshot.Memory.UsagePercent = SensorReading<double>.FromValue(hardware.MemoryUsage.Value.Value, hardware.MemoryUsage.Source, hardware.MemoryUsage.IsFallback);
+                snapshot.Memory.UsagePercent = SensorReading<double>.FromValue(hardware.MemoryUsage.Value.Value, hardware.MemoryUsage.Source, hardware.MemoryUsage.IsFallback, hardware.MemoryUsage.ConfidenceScore);
+                totalConfidence += hardware.MemoryUsage.ConfidenceScore;
+                sensorCount++;
             }
             double totalMb = hardware.TotalPhysicalMemoryBytes / (1024.0 * 1024.0);
             double availMb = hardware.AvailablePhysicalMemoryBytes / (1024.0 * 1024.0);
-            snapshot.Memory.TotalMb = SensorReading<double>.FromValue(Math.Round(totalMb, 1), "GC.MemoryInfo");
-            snapshot.Memory.UsedMb = SensorReading<double>.FromValue(Math.Round(Math.Max(0, totalMb - availMb), 1), "GC.MemoryInfo");
+            snapshot.Memory.TotalMb = SensorReading<double>.FromValue(Math.Round(totalMb, 1), "GC.MemoryInfo", isFallback: false, confidenceScore: 100);
+            snapshot.Memory.UsedMb = SensorReading<double>.FromValue(Math.Round(Math.Max(0, totalMb - availMb), 1), "GC.MemoryInfo", isFallback: false, confidenceScore: 100);
         }
 
         // Processes
@@ -84,16 +97,18 @@ public class HealthSnapshotBuilder : IHealthSnapshotBuilder
                 Label = d.Label,
                 TotalSizeGb = d.TotalSizeBytes / (1024.0 * 1024.0 * 1024.0),
                 FreeSpaceGb = d.FreeSizeBytes / (1024.0 * 1024.0 * 1024.0),
-                UsagePercent = SensorReading<double>.FromValue(d.UsagePercentage, "DriveInfo"),
-                HealthPercent = SensorReading<int>.FromValue(100, "SMART"),
+                UsagePercent = SensorReading<double>.FromValue(d.UsagePercentage, "DriveInfo", isFallback: false, confidenceScore: 100),
+                HealthPercent = SensorReading<int>.FromValue(100, "SMART", isFallback: false, confidenceScore: 100),
                 SmartStatus = "OK"
             }).ToList();
         }
 
-        // Trust Metadata Calculation
+        // Compute overall snapshot confidence average
+        int overallConfidence = sensorCount > 0 ? (int)Math.Round((double)totalConfidence / sensorCount) : 100;
+
         snapshot.Trust = new TrustMetadata
         {
-            ConfidenceScore = anyFallbackUsed ? 65 : 100,
+            ConfidenceScore = overallConfidence,
             SensorSource = mainSource,
             FallbackUsed = anyFallbackUsed
         };

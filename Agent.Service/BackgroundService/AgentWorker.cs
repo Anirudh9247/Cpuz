@@ -15,6 +15,7 @@ public class AgentWorker : Microsoft.Extensions.Hosting.BackgroundService
     private readonly ITelemetryCollector _telemetryCollector;
     private readonly IProcessMonitor _processMonitor;
     private readonly IAgentWebSocketClient _webSocketClient;
+    private readonly IAgentWebSocketServer _webSocketServer;
     private readonly IHealthSnapshotValidator _validator;
     private readonly AgentConfig _config;
     private readonly ILogger<AgentWorker> _logger;
@@ -23,6 +24,7 @@ public class AgentWorker : Microsoft.Extensions.Hosting.BackgroundService
         ITelemetryCollector telemetryCollector,
         IProcessMonitor processMonitor,
         IAgentWebSocketClient webSocketClient,
+        IAgentWebSocketServer webSocketServer,
         IHealthSnapshotValidator validator,
         IOptions<AgentConfig> configOptions,
         ILogger<AgentWorker> logger)
@@ -30,18 +32,33 @@ public class AgentWorker : Microsoft.Extensions.Hosting.BackgroundService
         _telemetryCollector = telemetryCollector;
         _processMonitor = processMonitor;
         _webSocketClient = webSocketClient;
+        _webSocketServer = webSocketServer;
         _validator = validator;
         _config = configOptions.Value;
         _logger = logger;
 
         _webSocketClient.MessageReceived += OnWebSocketMessageReceived;
-        _webSocketClient.Connected += (s, e) => _logger.LogInformation("Successfully connected to WebSocket server at {Url}", _config.ServerWebSocketUrl);
-        _webSocketClient.Disconnected += (s, e) => _logger.LogWarning("WebSocket client disconnected from server.");
+        _webSocketClient.Connected += (s, e) => _logger.LogInformation("Successfully connected to outbound WebSocket server at {Url}", _config.ServerWebSocketUrl);
+        _webSocketClient.Disconnected += (s, e) => _logger.LogWarning("Outbound WebSocket client disconnected.");
+
+        _webSocketServer.MessageReceived += OnServerClientMessageReceived;
+        _webSocketServer.ClientCountChanged += (s, count) => _logger.LogInformation("🌐 Embedded WebSocket Server client count updated: {Count} client(s) connected", count);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("ComputerDoctor Agent Service starting up for AgentId: {AgentId}...", _config.AgentId);
+
+        // Start Embedded WebSocket Server for mobile / dashboard streaming
+        try
+        {
+            await _webSocketServer.StartAsync("http://localhost:8080/ws/", stoppingToken);
+            _logger.LogInformation("🚀 Embedded WebSocket Server started at http://localhost:8080/ws/");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to start embedded WebSocket server at http://localhost:8080/ws/");
+        }
 
         var serverUri = new Uri(_config.ServerWebSocketUrl);
 
@@ -52,7 +69,7 @@ public class AgentWorker : Microsoft.Extensions.Hosting.BackgroundService
                 // Harvest canonical HealthSnapshot
                 var snapshot = await _telemetryCollector.CollectSnapshotAsync(stoppingToken);
 
-                // Task 5: Snapshot Validation
+                // Snapshot Validation
                 var validation = _validator.Validate(snapshot);
                 if (!validation.IsValid)
                 {
@@ -94,7 +111,20 @@ public class AgentWorker : Microsoft.Extensions.Hosting.BackgroundService
                     }
                 }
 
-                // Network Transmission over WebSocket
+                var wrapper = new TelemetryPayloadWrapper
+                {
+                    AgentVersion = "1.0.0",
+                    MessageType = "HEALTH_SNAPSHOT",
+                    Snapshot = snapshot
+                };
+
+                // Broadcast to all connected clients on Embedded WebSocket Server
+                if (_webSocketServer.ConnectedClientCount > 0)
+                {
+                    await _webSocketServer.BroadcastAsync(wrapper, stoppingToken);
+                }
+
+                // Transmission over outbound WebSocket Client (if configured)
                 if (!_webSocketClient.IsConnected)
                 {
                     try
@@ -109,12 +139,6 @@ public class AgentWorker : Microsoft.Extensions.Hosting.BackgroundService
 
                 if (_webSocketClient.IsConnected)
                 {
-                    var wrapper = new TelemetryPayloadWrapper
-                    {
-                        AgentVersion = "1.0.0",
-                        MessageType = "HEALTH_SNAPSHOT",
-                        Snapshot = snapshot
-                    };
                     await _webSocketClient.SendMessageAsync(wrapper, stoppingToken);
                 }
             }
@@ -130,6 +154,11 @@ public class AgentWorker : Microsoft.Extensions.Hosting.BackgroundService
             await Task.Delay(_config.MetricCollectionIntervalMs, stoppingToken);
         }
 
+        if (_webSocketServer.IsRunning)
+        {
+            await _webSocketServer.StopAsync(CancellationToken.None);
+        }
+
         if (_webSocketClient.IsConnected)
         {
             await _webSocketClient.DisconnectAsync(CancellationToken.None);
@@ -138,10 +167,20 @@ public class AgentWorker : Microsoft.Extensions.Hosting.BackgroundService
         _logger.LogInformation("ComputerDoctor Agent Service has stopped.");
     }
 
+    private async void OnServerClientMessageReceived(object? sender, ClientMessageReceivedEventArgs e)
+    {
+        _logger.LogInformation("Received inbound message from client [{ClientId}]: {Message}", e.ClientId, e.Message);
+        await ProcessIncomingCommandAsync(e.Message);
+    }
+
     private async void OnWebSocketMessageReceived(object? sender, string message)
     {
-        _logger.LogInformation("Received message from WebSocket server: {Message}", message);
+        _logger.LogInformation("Received message from outbound server: {Message}", message);
+        await ProcessIncomingCommandAsync(message);
+    }
 
+    private async Task ProcessIncomingCommandAsync(string message)
+    {
         try
         {
             var command = AgentJsonSerializer.Deserialize<CommandMessage>(message);
@@ -149,7 +188,7 @@ public class AgentWorker : Microsoft.Extensions.Hosting.BackgroundService
             {
                 if (command.Parameters.TryGetValue("processId", out string? pidStr) && int.TryParse(pidStr, out int pid))
                 {
-                    _logger.LogWarning("Executing server command to kill process ID: {Pid}", pid);
+                    _logger.LogWarning("Executing command to kill process ID: {Pid}", pid);
                     bool success = await _processMonitor.KillProcessByIdAsync(pid);
                     _logger.LogInformation("Process kill request for PID {Pid} returned status: {Status}", pid, success);
                 }
@@ -157,7 +196,7 @@ public class AgentWorker : Microsoft.Extensions.Hosting.BackgroundService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to parse or execute incoming WebSocket command message.");
+            _logger.LogError(ex, "Failed to parse or execute incoming command message.");
         }
     }
 }

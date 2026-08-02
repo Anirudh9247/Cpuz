@@ -36,8 +36,9 @@ builder.ConfigureServices((hostContext, services) =>
     services.AddSingleton<IHealthSnapshotValidator, HealthSnapshotValidator>();
     services.AddSingleton<ITelemetryCollector, TelemetryCollector>();
 
-    // Network Client
+    // Network Component
     services.AddSingleton<IAgentWebSocketClient, AgentWebSocketClient>();
+    services.AddSingleton<IAgentWebSocketServer, AgentWebSocketServer>();
 
     // Background Worker
     services.AddHostedService<AgentWorker>();

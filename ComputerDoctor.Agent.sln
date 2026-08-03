@@ -10,6 +10,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Agent.Service", "Agent.Serv
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Agent.Tests", "Agent.Tests\Agent.Tests.csproj", "{9A19B0D3-E6F0-4E80-92CD-017E5A029004}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Agent.TrayApp", "Agent.TrayApp\Agent.TrayApp.csproj", "{9A19B0D3-E6F0-4E80-92CD-017E5A029005}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -32,6 +34,10 @@ Global
 		{9A19B0D3-E6F0-4E80-92CD-017E5A029004}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{9A19B0D3-E6F0-4E80-92CD-017E5A029004}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{9A19B0D3-E6F0-4E80-92CD-017E5A029004}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9A19B0D3-E6F0-4E80-92CD-017E5A029005}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9A19B0D3-E6F0-4E80-92CD-017E5A029005}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9A19B0D3-E6F0-4E80-92CD-017E5A029005}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9A19B0D3-E6F0-4E80-92CD-017E5A029005}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

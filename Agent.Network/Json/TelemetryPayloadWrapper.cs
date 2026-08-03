@@ -18,13 +18,6 @@ public class CommandPayload
     public Dictionary<string, string> Parameters { get; set; } = new();
 }
 
-public class CommandAckPayload
-{
-    public string CommandId { get; set; } = string.Empty;
-    public string Command { get; set; } = string.Empty;
-    public bool Success { get; set; }
-    public string ResultMessage { get; set; } = string.Empty;
-}
 
 public class HeartbeatPayload
 {

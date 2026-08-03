@@ -21,6 +21,8 @@ public class AgentWorker : Microsoft.Extensions.Hosting.BackgroundService
 {
     private readonly ITelemetryCollector _telemetryCollector;
     private readonly IProcessMonitor _processMonitor;
+    private readonly ICommandExecutor _commandExecutor;
+    private readonly IDiscoveryBroadcaster _discoveryBroadcaster;
     private readonly IAgentWebSocketClient _webSocketClient;
     private readonly IAgentWebSocketServer _webSocketServer;
     private readonly IHealthSnapshotValidator _validator;
@@ -31,6 +33,8 @@ public class AgentWorker : Microsoft.Extensions.Hosting.BackgroundService
     public AgentWorker(
         ITelemetryCollector telemetryCollector,
         IProcessMonitor processMonitor,
+        ICommandExecutor commandExecutor,
+        IDiscoveryBroadcaster discoveryBroadcaster,
         IAgentWebSocketClient webSocketClient,
         IAgentWebSocketServer webSocketServer,
         IHealthSnapshotValidator validator,
@@ -39,6 +43,8 @@ public class AgentWorker : Microsoft.Extensions.Hosting.BackgroundService
     {
         _telemetryCollector = telemetryCollector;
         _processMonitor = processMonitor;
+        _commandExecutor = commandExecutor;
+        _discoveryBroadcaster = discoveryBroadcaster;
         _webSocketClient = webSocketClient;
         _webSocketServer = webSocketServer;
         _validator = validator;
@@ -59,6 +65,17 @@ public class AgentWorker : Microsoft.Extensions.Hosting.BackgroundService
 
         // Start background Command Processor worker thread
         _ = Task.Run(() => ProcessCommandQueueAsync(stoppingToken), stoppingToken);
+
+        // Start UDP Auto-Discovery Broadcaster on Port 8888
+        try
+        {
+            _discoveryBroadcaster.Start(port: 8888, broadcastIntervalMs: 3000);
+            _logger.LogInformation("📡 UDP Auto-Discovery Broadcaster started on port 8888 (interval: 3s)");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to start UDP Auto-Discovery Broadcaster on port 8888.");
+        }
 
         // Start Embedded WebSocket Server for mobile / dashboard streaming
         try
@@ -248,32 +265,24 @@ public class AgentWorker : Microsoft.Extensions.Hosting.BackgroundService
             return;
         }
 
-        if (command.Command.Equals("KILL_PROCESS", StringComparison.OrdinalIgnoreCase))
+        string commandId = Guid.NewGuid().ToString("N");
+        _logger.LogInformation("⚡ Executing remote command '{Command}' from client [{ClientId}]", command.Command, item.ClientId);
+
+        var ackPayload = await _commandExecutor.ExecuteCommandAsync(commandId, command.Command, command.Parameters, cancellationToken);
+
+        _logger.LogInformation("⚡ Remote command '{Command}' returned Result: {Success} in {Ms}ms — Message: {Msg}",
+            command.Command, ackPayload.Success, ackPayload.ExecutionTimeMs, ackPayload.Message);
+
+        var ackEnvelope = new NetworkEnvelope<CommandAckPayload>
         {
-            if (command.Parameters.TryGetValue("processId", out string? pidStr) && int.TryParse(pidStr, out int pid))
-            {
-                _logger.LogWarning("⚡ [Async Queue Worker] Executing process termination for PID: {Pid}", pid);
-                bool success = await _processMonitor.KillProcessByIdAsync(pid);
-                _logger.LogInformation("⚡ Process termination PID {Pid} result: {Status}", pid, success);
+            Type = "COMMAND_ACK",
+            SchemaVersion = 1,
+            Payload = ackPayload
+        };
 
-                // Send ACK response envelope back to clients
-                var ackEnvelope = new NetworkEnvelope<CommandAckPayload>
-                {
-                    Type = "COMMAND_ACK",
-                    SchemaVersion = 1,
-                    Payload = new CommandAckPayload
-                    {
-                        Command = "KILL_PROCESS",
-                        Success = success,
-                        ResultMessage = success ? $"Process {pid} terminated successfully." : $"Failed to terminate process {pid}."
-                    }
-                };
-
-                if (_webSocketServer.ConnectedClientCount > 0)
-                {
-                    await _webSocketServer.BroadcastAsync(ackEnvelope, cancellationToken);
-                }
-            }
+        if (_webSocketServer.ConnectedClientCount > 0)
+        {
+            await _webSocketServer.BroadcastAsync(ackEnvelope, cancellationToken);
         }
     }
 }

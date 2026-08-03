@@ -1,8 +1,10 @@
 using System.Threading.Channels;
+using Agent.Core.Commands;
 using Agent.Core.Models;
 using Agent.Core.Processes;
 using Agent.Core.Telemetry;
 using Agent.Core.Validation;
+using Agent.Network.Discovery;
 using Agent.Network.Json;
 using Agent.Network.WebSocket;
 using Microsoft.Extensions.Hosting;
@@ -254,7 +256,7 @@ public class AgentWorker : Microsoft.Extensions.Hosting.BackgroundService
                 {
                     Command = command.Command,
                     Success = false,
-                    ResultMessage = "Unauthorized: Missing or invalid API key."
+                    Message = "Unauthorized: Missing or invalid API key."
                 }
             };
 

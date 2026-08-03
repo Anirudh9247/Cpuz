@@ -1,4 +1,5 @@
 using Agent.Core.Alerts;
+using Agent.Core.Commands;
 using Agent.Core.Hardware;
 using Agent.Core.Health;
 using Agent.Core.Models;
@@ -6,6 +7,7 @@ using Agent.Core.Processes;
 using Agent.Core.Storage;
 using Agent.Core.Telemetry;
 using Agent.Core.Validation;
+using Agent.Network.Discovery;
 using Agent.Network.WebSocket;
 using Agent.Service.BackgroundService;
 using Microsoft.Extensions.Configuration;

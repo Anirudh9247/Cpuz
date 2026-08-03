@@ -39,9 +39,12 @@ public class TrayApplicationContext : ApplicationContext
 
     public TrayApplicationContext()
     {
+        Console.WriteLine("[TrayApp] Constructor starting...");
+
         var config = Options.Create(new AgentConfig());
 
         // Initialize Core Services
+        Console.WriteLine("[TrayApp] Creating core services...");
         var sensorPipeline = new SensorPipeline();
         var hardwareMonitor = new HardwareMonitor();
         var processMonitor = new ProcessMonitor();
@@ -57,12 +60,13 @@ public class TrayApplicationContext : ApplicationContext
         _webSocketServer = new AgentWebSocketServer();
         _discoveryBroadcaster = new DiscoveryBroadcaster();
         _heartbeatMonitor = new HeartbeatMonitor(_sessionPairingManager, _webSocketServer, NullLogger<HeartbeatMonitor>.Instance);
+        Console.WriteLine("[TrayApp] Core services created.");
 
         // Menu Items
-        _statusMenuItem = new ToolStripMenuItem("💚 Status: Initializing...", null) { Enabled = false };
-        _telemetryMenuItem = new ToolStripMenuItem("💻 Hardware: Reading...", null) { Enabled = false };
-        _clientsMenuItem = new ToolStripMenuItem("📱 Connected Devices: 0", null) { Enabled = false };
-        _toggleMenuItem = new ToolStripMenuItem("⏹️ Stop Monitoring", null, OnToggleMonitoring);
+        _statusMenuItem = new ToolStripMenuItem("Status: Initializing...") { Enabled = false };
+        _telemetryMenuItem = new ToolStripMenuItem("Hardware: Reading...") { Enabled = false };
+        _clientsMenuItem = new ToolStripMenuItem("Connected Devices: 0") { Enabled = false };
+        _toggleMenuItem = new ToolStripMenuItem("Stop Monitoring", null, OnToggleMonitoring);
 
         var contextMenu = new ContextMenuStrip();
         contextMenu.Items.Add(_statusMenuItem);
@@ -70,19 +74,22 @@ public class TrayApplicationContext : ApplicationContext
         contextMenu.Items.Add(_clientsMenuItem);
         contextMenu.Items.Add(new ToolStripSeparator());
         contextMenu.Items.Add(_toggleMenuItem);
-        contextMenu.Items.Add(new ToolStripMenuItem("ℹ️ Server Info (Port 8080/8888)", null, OnShowInfo));
+        contextMenu.Items.Add(new ToolStripMenuItem("Server Info", null, OnShowInfo));
         contextMenu.Items.Add(new ToolStripSeparator());
-        contextMenu.Items.Add(new ToolStripMenuItem("❌ Exit Agent", null, OnExit));
+        contextMenu.Items.Add(new ToolStripMenuItem("Exit Agent", null, OnExit));
+        Console.WriteLine("[TrayApp] Context menu built.");
 
-        _notifyIcon = new NotifyIcon
-        {
-            Icon = SystemIcons.Shield,
-            ContextMenuStrip = contextMenu,
-            Text = "ComputerDoctor Agent",
-            Visible = true
-        };
+        // Create a custom icon (green circle on transparent background)
+        var icon = CreateTrayIcon();
+        Console.WriteLine($"[TrayApp] Icon created: {icon.Width}x{icon.Height}");
 
+        _notifyIcon = new NotifyIcon();
+        _notifyIcon.Icon = icon;
+        _notifyIcon.ContextMenuStrip = contextMenu;
+        _notifyIcon.Text = "ComputerDoctor Agent";
         _notifyIcon.DoubleClick += (s, e) => OnShowInfo(s, e);
+        _notifyIcon.Visible = true;
+        Console.WriteLine("[TrayApp] NotifyIcon.Visible = true. Icon should now appear in system tray.");
 
         // Start Networking & Background Tasks
         StartServices();
@@ -91,21 +98,82 @@ public class TrayApplicationContext : ApplicationContext
         _timer = new System.Windows.Forms.Timer { Interval = 2000 };
         _timer.Tick += async (s, e) => await OnTimerTickAsync();
         _timer.Start();
+        Console.WriteLine("[TrayApp] Timer started. Showing balloon tip...");
 
-        _notifyIcon.ShowBalloonTip(3000, "ComputerDoctor Agent Running", "System tray monitoring and P2P server active.", ToolTipIcon.Info);
+        _notifyIcon.ShowBalloonTip(5000, "ComputerDoctor Agent", "Agent is running. Right-click tray icon for options.", ToolTipIcon.Info);
+        Console.WriteLine("[TrayApp] Constructor complete. App is fully running.");
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto)]
+    private static extern bool DestroyIcon(IntPtr handle);
+
+    private static Icon CreateTrayIcon()
+    {
+        // Create a 32x32 icon with a green filled circle (visible in tray)
+        using var bmp = new Bitmap(32, 32);
+        using (var g = Graphics.FromImage(bmp))
+        {
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            g.Clear(Color.Transparent);
+            // Green circle with dark border
+            g.FillEllipse(Brushes.LimeGreen, 2, 2, 28, 28);
+            g.DrawEllipse(new Pen(Color.DarkGreen, 2), 2, 2, 28, 28);
+            // "+" cross in center for medical theme
+            g.FillRectangle(Brushes.White, 12, 6, 8, 20);
+            g.FillRectangle(Brushes.White, 6, 12, 20, 8);
+        }
+
+        IntPtr hIcon = bmp.GetHicon();
+        using var tempIcon = Icon.FromHandle(hIcon);
+        Icon clonedIcon = (Icon)tempIcon.Clone();
+        DestroyIcon(hIcon);
+        return clonedIcon;
     }
 
     private void StartServices()
     {
+        // Try multiple ports for WebSocket server
+        string[] ports = ["http://localhost:8085/ws/", "http://localhost:8086/ws/", "http://localhost:8087/ws/"];
+        bool wsStarted = false;
+
+        foreach (var url in ports)
+        {
+            try
+            {
+                _webSocketServer.StartAsync(url).GetAwaiter().GetResult();
+                Console.WriteLine($"[Agent.TrayApp] WebSocket server started on {url}");
+                wsStarted = true;
+                break;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Agent.TrayApp] Port {url} unavailable: {ex.Message}");
+            }
+        }
+
+        if (!wsStarted)
+        {
+            Console.WriteLine("[Agent.TrayApp] WARNING: WebSocket server could not start on any port. Monitoring-only mode.");
+        }
+
         try
         {
-            _webSocketServer.StartAsync("http://localhost:8080/ws/").GetAwaiter().GetResult();
             _discoveryBroadcaster.Start(port: 8888, broadcastIntervalMs: 3000);
-            _heartbeatMonitor.Start(pingIntervalMs: 5000, pongTimeoutMs: 15000);
+            Console.WriteLine("[Agent.TrayApp] UDP Discovery Broadcaster started on port 8888");
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Service Initialization Error: {ex.Message}", "ComputerDoctor Agent", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            Console.WriteLine($"[Agent.TrayApp] Discovery broadcaster failed: {ex.Message}");
+        }
+
+        try
+        {
+            _heartbeatMonitor.Start(pingIntervalMs: 5000, pongTimeoutMs: 15000);
+            Console.WriteLine("[Agent.TrayApp] Heartbeat Monitor started");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Agent.TrayApp] Heartbeat monitor failed: {ex.Message}");
         }
     }
 
@@ -115,7 +183,8 @@ public class TrayApplicationContext : ApplicationContext
 
         try
         {
-            var snapshot = await _telemetryCollector.CollectSnapshotAsync();
+            // Collect snapshot on background thread so STA UI thread remains 100% responsive
+            var snapshot = await Task.Run(() => _telemetryCollector.CollectSnapshotAsync());
 
             string badge = snapshot.OverallStatus switch
             {
@@ -134,6 +203,8 @@ public class TrayApplicationContext : ApplicationContext
             _telemetryMenuItem.Text = $"💻 CPU: {cpuLoad:F1}% ({cpuTempStr}) | RAM: {ramUsage:F1}%";
             _clientsMenuItem.Text = $"📱 Connected Devices: {_webSocketServer.ConnectedClientCount}";
 
+            Console.WriteLine($"[Agent.TrayApp] Telemetry updated: Score={snapshot.OverallHealthScore}, CPU={cpuLoad:F1}%, RAM={ramUsage:F1}%");
+
             // Trigger balloon notification on critical alert
             if (snapshot.OverallStatus == OverallHealthStatus.Critical && snapshot.Alerts.Count > 0)
             {
@@ -141,7 +212,10 @@ public class TrayApplicationContext : ApplicationContext
                 _notifyIcon.ShowBalloonTip(3000, "🚨 Critical System Alert", $"{topAlert.Category}: {topAlert.Message}", ToolTipIcon.Warning);
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Agent.TrayApp] Error during telemetry tick: {ex.Message}");
+        }
     }
 
     private void OnToggleMonitoring(object? sender, EventArgs e)

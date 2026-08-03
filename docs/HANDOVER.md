@@ -34,16 +34,16 @@ Ordered by dependency — items 1–4 (security core) block items 6 and 10, so t
 
 | # | Task | Owner | Priority | Status |
 |---|---|---|---|---|
-| **1** | Session token pairing workflow (mobile ↔ agent handshake) | Editor | Critical | Not Started |
-| **2** | Client connection state machine (connecting/paired/active/disconnected) | Editor | Critical | Not Started |
-| **3** | PING/PONG heartbeat + stale-connection timeout handling | Editor | High | Not Started |
-| **4** | Auth gate on `CommandExecutor` so only paired sessions can send destructive commands | Editor | Critical | Not Started |
-| **5** | Triage the 1 existing build warning (`CA1416` platform compatibility) | Editor | Low | Not Started |
-| **6** | WinForms system tray host with live status popup | Editor + Intern 2 | Medium | Not Started |
-| **7** | Windows Service installer package | Editor | Medium | Not Started |
-| **8** | Architecture / sequence / component diagrams | Intern 2 (drafts) + Editor (review) | Medium | Not Started |
-| **9** | Update `appsettings.json` docs for new security config | Editor | Low | Not Started |
-| **10** | End-to-end test: Android app pairing → command → ack round trip | Editor + Intern 2 | High | Not Started |
+| **1** | Session token pairing workflow (mobile ↔ agent handshake) | Editor | Critical | ✅ Done |
+| **2** | Client connection state machine (connecting/paired/active/disconnected) | Editor | Critical | ✅ Done |
+| **3** | PING/PONG heartbeat + stale-connection timeout handling | Editor | High | ✅ Done |
+| **4** | Auth gate on `CommandExecutor` so only paired sessions can send destructive commands | Editor | Critical | ✅ Done |
+| **5** | Triage the 1 existing build warning (`CA1416` platform compatibility) | Editor | Low | ✅ Done |
+| **6** | WinForms system tray host with live status popup | Editor + Intern 2 | Medium | ✅ Done |
+| **7** | Windows Service installer package & startup scripts | Editor | Medium | ✅ Done |
+| **8** | Architecture / sequence / component diagrams | Intern 2 (drafts) + Editor (review) | Medium | ✅ Done |
+| **9** | Update `appsettings.json` docs for new security config | Editor | Low | ✅ Done |
+| **10** | End-to-end test: Android app pairing → command → ack round trip | Editor + Intern 2 | High | ✅ Done |
 
 ---
 

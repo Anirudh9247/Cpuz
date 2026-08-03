@@ -4,6 +4,7 @@ using Xunit;
 
 namespace Agent.Tests.Network;
 
+[Collection("WebSocketTests")]
 public class WebSocketServerTests
 {
     [Fact]
@@ -55,8 +56,8 @@ public class WebSocketServerTests
     public async Task AgentWebSocketServer_MultipleClients_DisconnectOne_SurvivingClientReceivesBroadcast()
     {
         // Arrange
-        string serverUrl = "http://localhost:8090/ws/";
-        Uri clientUri = new Uri("ws://localhost:8090/ws/");
+        string serverUrl = "http://localhost:8092/ws/";
+        Uri clientUri = new Uri("ws://localhost:8092/ws/");
 
         using var server = new AgentWebSocketServer();
         using var client1 = new AgentWebSocketClient();

@@ -2,6 +2,7 @@ using System.Threading.Channels;
 using Agent.Core.Commands;
 using Agent.Core.Models;
 using Agent.Core.Processes;
+using Agent.Core.Security;
 using Agent.Core.Telemetry;
 using Agent.Core.Validation;
 using Agent.Network.Discovery;

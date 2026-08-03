@@ -56,7 +56,10 @@ builder.ConfigureLogging((hostContext, logging) =>
 {
     logging.ClearProviders();
     logging.AddConsole();
-    logging.AddEventLog();
+    if (OperatingSystem.IsWindows())
+    {
+        logging.AddEventLog();
+    }
 });
 
 var host = builder.Build();

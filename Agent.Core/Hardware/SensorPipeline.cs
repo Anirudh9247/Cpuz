@@ -115,6 +115,22 @@ public class SensorPipeline : ISensorPipeline, IDisposable
         return Task.FromResult(SensorReading<double>.Empty("Unavailable"));
     }
 
+    public Task<SensorReading<double>> ReadGpuLoadAsync(CancellationToken cancellationToken = default)
+    {
+        if (_isLhmInitialized && _computer != null && _visitor != null)
+        {
+            try
+            {
+                _computer.Accept(_visitor);
+                var lhmReading = GetLhmGpuLoad();
+                if (lhmReading.HasValue) return Task.FromResult(lhmReading);
+            }
+            catch { }
+        }
+
+        return Task.FromResult(SensorReading<double>.Empty("Unavailable"));
+    }
+
     public Task<SensorReading<double>> ReadMemoryUsageAsync(CancellationToken cancellationToken = default)
     {
         var gcInfo = GC.GetGCMemoryInfo();
@@ -151,6 +167,7 @@ public class SensorPipeline : ISensorPipeline, IDisposable
         var cpuTemp = await ReadCpuTempAsync(cancellationToken);
         var cpuLoad = await ReadCpuLoadAsync(cancellationToken);
         var gpuTemp = await ReadGpuTempAsync(cancellationToken);
+        var gpuLoad = await ReadGpuLoadAsync(cancellationToken);
         var memUsage = await ReadMemoryUsageAsync(cancellationToken);
 
         var gcInfo = GC.GetGCMemoryInfo();
@@ -162,6 +179,7 @@ public class SensorPipeline : ISensorPipeline, IDisposable
             CpuTemp = cpuTemp.HasValue ? SensorReading<float>.FromValue((float)cpuTemp.Value.Value, cpuTemp.Source, cpuTemp.IsFallback, cpuTemp.ConfidenceScore) : SensorReading<float>.Empty(cpuTemp.Source),
             CpuUsage = cpuLoad.HasValue ? SensorReading<float>.FromValue((float)cpuLoad.Value.Value, cpuLoad.Source, cpuLoad.IsFallback, cpuLoad.ConfidenceScore) : SensorReading<float>.Empty(cpuLoad.Source),
             GpuTemp = gpuTemp.HasValue ? SensorReading<float>.FromValue((float)gpuTemp.Value.Value, gpuTemp.Source, gpuTemp.IsFallback, gpuTemp.ConfidenceScore) : SensorReading<float>.Empty(gpuTemp.Source),
+            GpuUsage = gpuLoad.HasValue ? SensorReading<float>.FromValue((float)gpuLoad.Value.Value, gpuLoad.Source, gpuLoad.IsFallback, gpuLoad.ConfidenceScore) : SensorReading<float>.Empty(gpuLoad.Source),
             MemoryUsage = memUsage.HasValue ? SensorReading<float>.FromValue((float)memUsage.Value.Value, memUsage.Source, memUsage.IsFallback, memUsage.ConfidenceScore) : SensorReading<float>.Empty(memUsage.Source),
             LogicalProcessorCount = Environment.ProcessorCount,
             TotalPhysicalMemoryBytes = totalBytes,
@@ -223,6 +241,26 @@ public class SensorPipeline : ISensorPipeline, IDisposable
                 foreach (var sensor in hardware.Sensors)
                 {
                     if (sensor.SensorType == SensorType.Temperature && sensor.Value.HasValue && sensor.Value.Value > 0)
+                    {
+                        return SensorReading<double>.FromValue(Math.Round(sensor.Value.Value, 1), $"LibreHardwareMonitor.{hardware.HardwareType}", isFallback: false, confidenceScore: 100);
+                    }
+                }
+            }
+        }
+        return SensorReading<double>.Empty();
+    }
+
+    private SensorReading<double> GetLhmGpuLoad()
+    {
+        if (_computer == null) return SensorReading<double>.Empty();
+
+        foreach (var hardware in _computer.Hardware)
+        {
+            if (hardware.HardwareType == HardwareType.GpuNvidia || hardware.HardwareType == HardwareType.GpuAmd || hardware.HardwareType == HardwareType.GpuIntel)
+            {
+                foreach (var sensor in hardware.Sensors)
+                {
+                    if (sensor.SensorType == SensorType.Load && sensor.Value.HasValue)
                     {
                         return SensorReading<double>.FromValue(Math.Round(sensor.Value.Value, 1), $"LibreHardwareMonitor.{hardware.HardwareType}", isFallback: false, confidenceScore: 100);
                     }

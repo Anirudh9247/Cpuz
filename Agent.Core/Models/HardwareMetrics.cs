@@ -5,6 +5,7 @@ public class HardwareMetrics
     public SensorReading<float> CpuUsage { get; set; } = SensorReading<float>.Empty();
     public SensorReading<float> CpuTemp { get; set; } = SensorReading<float>.Empty();
     public SensorReading<float> GpuTemp { get; set; } = SensorReading<float>.Empty();
+    public SensorReading<float> GpuUsage { get; set; } = SensorReading<float>.Empty();
     public SensorReading<float> MemoryUsage { get; set; } = SensorReading<float>.Empty();
 
     // Backward compatibility helper properties

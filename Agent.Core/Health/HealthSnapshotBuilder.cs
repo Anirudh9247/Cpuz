@@ -66,6 +66,13 @@ public class HealthSnapshotBuilder : IHealthSnapshotBuilder
                 totalConfidence += hardware.GpuTemp.ConfidenceScore;
                 sensorCount++;
             }
+            if (hardware.GpuUsage.HasValue)
+            {
+                snapshot.Gpu.LoadPercent = SensorReading<double>.FromValue(hardware.GpuUsage.Value.Value, hardware.GpuUsage.Source, hardware.GpuUsage.IsFallback, hardware.GpuUsage.ConfidenceScore);
+                if (hardware.GpuUsage.IsFallback) anyFallbackUsed = true;
+                totalConfidence += hardware.GpuUsage.ConfidenceScore;
+                sensorCount++;
+            }
 
             // Memory
             if (hardware.MemoryUsage.HasValue)

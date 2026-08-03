@@ -1,19 +1,28 @@
 using System.Diagnostics;
-using Agent.Core.Processes;
 using Agent.Core.Models;
+using Agent.Core.Processes;
+using Agent.Core.Security;
 
 namespace Agent.Core.Commands;
 
 public class CommandExecutor : ICommandExecutor
 {
     private readonly IProcessMonitor _processMonitor;
+    private readonly ISessionPairingManager _sessionPairingManager;
 
-    public CommandExecutor(IProcessMonitor processMonitor)
+    public CommandExecutor(IProcessMonitor processMonitor, ISessionPairingManager sessionPairingManager)
     {
         _processMonitor = processMonitor;
+        _sessionPairingManager = sessionPairingManager;
     }
 
-    public async Task<CommandAckPayload> ExecuteCommandAsync(string commandId, string commandName, Dictionary<string, string> parameters, CancellationToken cancellationToken = default)
+    public async Task<CommandAckPayload> ExecuteCommandAsync(
+        string commandId, 
+        string commandName, 
+        Dictionary<string, string> parameters, 
+        string clientId, 
+        string sessionToken, 
+        CancellationToken cancellationToken = default)
     {
         var sw = Stopwatch.StartNew();
         var response = new CommandAckPayload
@@ -24,8 +33,38 @@ public class CommandExecutor : ICommandExecutor
 
         try
         {
+            // 🛡️ AUTH GATE: Validate session token unless command is unauthenticated pairing/PING
+            bool isPublicCommand = string.Equals(commandName, "PAIR_REQUEST", StringComparison.OrdinalIgnoreCase) ||
+                                  string.Equals(commandName, "PING", StringComparison.OrdinalIgnoreCase);
+
+            if (!isPublicCommand)
+            {
+                bool isAuthorized = _sessionPairingManager.ValidateSessionToken(clientId, sessionToken);
+                if (!isAuthorized)
+                {
+                    sw.Stop();
+                    response.Success = false;
+                    response.ExecutionTimeMs = sw.ElapsedMilliseconds;
+                    response.Message = "Unauthorized: Invalid or expired session token. Pairing required.";
+                    return response;
+                }
+            }
+
             switch (commandName.ToUpperInvariant())
             {
+                case "PAIR_REQUEST":
+                    string deviceName = parameters.GetValueOrDefault("deviceName", "MobileDevice");
+                    string pin = parameters.GetValueOrDefault("pin", string.Empty);
+                    var pairingResult = _sessionPairingManager.PairClient(clientId, deviceName, pin);
+                    
+                    response.Success = pairingResult.Success;
+                    response.Message = pairingResult.Message;
+                    if (pairingResult.Success)
+                    {
+                        parameters["sessionToken"] = pairingResult.SessionToken;
+                    }
+                    break;
+
                 case "KILL_PROCESS":
                     if (parameters.TryGetValue("processId", out string? pidStr) && int.TryParse(pidStr, out int pid))
                     {
@@ -64,7 +103,7 @@ public class CommandExecutor : ICommandExecutor
 
                 default:
                     response.Success = false;
-                    response.Message = $"Unknown command '{commandName}'. Supported: KILL_PROCESS, RESTART_EXPLORER, CLEAR_TEMP_FILES, FLUSH_DNS.";
+                    response.Message = $"Unknown command '{commandName}'. Supported: PAIR_REQUEST, KILL_PROCESS, RESTART_EXPLORER, CLEAR_TEMP_FILES, FLUSH_DNS.";
                     break;
             }
         }

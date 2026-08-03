@@ -6,6 +6,7 @@ using Agent.Core.Telemetry;
 using Agent.Core.Validation;
 using Agent.Network.Discovery;
 using Agent.Network.Json;
+using Agent.Network.Security;
 using Agent.Network.WebSocket;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -25,6 +26,8 @@ public class AgentWorker : Microsoft.Extensions.Hosting.BackgroundService
     private readonly IProcessMonitor _processMonitor;
     private readonly ICommandExecutor _commandExecutor;
     private readonly IDiscoveryBroadcaster _discoveryBroadcaster;
+    private readonly ISessionPairingManager _sessionPairingManager;
+    private readonly IHeartbeatMonitor _heartbeatMonitor;
     private readonly IAgentWebSocketClient _webSocketClient;
     private readonly IAgentWebSocketServer _webSocketServer;
     private readonly IHealthSnapshotValidator _validator;
@@ -37,6 +40,8 @@ public class AgentWorker : Microsoft.Extensions.Hosting.BackgroundService
         IProcessMonitor processMonitor,
         ICommandExecutor commandExecutor,
         IDiscoveryBroadcaster discoveryBroadcaster,
+        ISessionPairingManager sessionPairingManager,
+        IHeartbeatMonitor heartbeatMonitor,
         IAgentWebSocketClient webSocketClient,
         IAgentWebSocketServer webSocketServer,
         IHealthSnapshotValidator validator,
@@ -47,6 +52,8 @@ public class AgentWorker : Microsoft.Extensions.Hosting.BackgroundService
         _processMonitor = processMonitor;
         _commandExecutor = commandExecutor;
         _discoveryBroadcaster = discoveryBroadcaster;
+        _sessionPairingManager = sessionPairingManager;
+        _heartbeatMonitor = heartbeatMonitor;
         _webSocketClient = webSocketClient;
         _webSocketServer = webSocketServer;
         _validator = validator;
@@ -67,6 +74,17 @@ public class AgentWorker : Microsoft.Extensions.Hosting.BackgroundService
 
         // Start background Command Processor worker thread
         _ = Task.Run(() => ProcessCommandQueueAsync(stoppingToken), stoppingToken);
+
+        // Start Heartbeat PING/PONG Monitor
+        try
+        {
+            _heartbeatMonitor.Start(pingIntervalMs: 5000, pongTimeoutMs: 15000);
+            _logger.LogInformation("💓 Heartbeat PING/PONG Monitor started (ping: 5s, timeout: 15s)");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to start Heartbeat Monitor.");
+        }
 
         // Start UDP Auto-Discovery Broadcaster on Port 8888
         try
@@ -268,9 +286,10 @@ public class AgentWorker : Microsoft.Extensions.Hosting.BackgroundService
         }
 
         string commandId = Guid.NewGuid().ToString("N");
+        command.Parameters.TryGetValue("sessionToken", out string? token);
         _logger.LogInformation("⚡ Executing remote command '{Command}' from client [{ClientId}]", command.Command, item.ClientId);
 
-        var ackPayload = await _commandExecutor.ExecuteCommandAsync(commandId, command.Command, command.Parameters, cancellationToken);
+        var ackPayload = await _commandExecutor.ExecuteCommandAsync(commandId, command.Command, command.Parameters, item.ClientId, token ?? string.Empty, cancellationToken);
 
         _logger.LogInformation("⚡ Remote command '{Command}' returned Result: {Success} in {Ms}ms — Message: {Msg}",
             command.Command, ackPayload.Success, ackPayload.ExecutionTimeMs, ackPayload.Message);

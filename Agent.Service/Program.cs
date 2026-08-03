@@ -4,10 +4,12 @@ using Agent.Core.Hardware;
 using Agent.Core.Health;
 using Agent.Core.Models;
 using Agent.Core.Processes;
+using Agent.Core.Security;
 using Agent.Core.Storage;
 using Agent.Core.Telemetry;
 using Agent.Core.Validation;
 using Agent.Network.Discovery;
+using Agent.Network.Security;
 using Agent.Network.WebSocket;
 using Agent.Service.BackgroundService;
 using Microsoft.Extensions.Configuration;
@@ -38,7 +40,9 @@ builder.ConfigureServices((hostContext, services) =>
     services.AddSingleton<IHealthSnapshotValidator, HealthSnapshotValidator>();
     services.AddSingleton<ITelemetryCollector, TelemetryCollector>();
 
-    // Network & Command Components
+    // Security, Network & Command Components
+    services.AddSingleton<ISessionPairingManager, SessionPairingManager>();
+    services.AddSingleton<IHeartbeatMonitor, HeartbeatMonitor>();
     services.AddSingleton<ICommandExecutor, CommandExecutor>();
     services.AddSingleton<IDiscoveryBroadcaster, DiscoveryBroadcaster>();
     services.AddSingleton<IAgentWebSocketClient, AgentWebSocketClient>();

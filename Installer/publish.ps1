@@ -8,7 +8,7 @@ param (
 )
 
 Write-Host "==========================================================" -ForegroundColor Cyan
-Write-Host " 📦 ComputerDoctor Agent Packaging & Publisher" -ForegroundColor Cyan
+Write-Host " ComputerDoctor Agent Packaging and Publisher" -ForegroundColor Cyan
 Write-Host "==========================================================" -ForegroundColor Cyan
 
 $ProjectRoot = Resolve-Path "$PSScriptRoot\.."
@@ -24,13 +24,7 @@ Remove-Item -Path "$DistPath\*" -Recurse -Force -ErrorAction SilentlyContinue
 
 # 1. Publish TrayApp (WinForms Desktop Host)
 Write-Host "`n[1/2] Publishing Agent.TrayApp (Desktop Tray Host)..." -ForegroundColor Green
-dotnet publish "$ProjectRoot\Agent.TrayApp\Agent.TrayApp.csproj" `
-    -c $Configuration `
-    -r $Runtime `
-    --self-contained true `
-    -p:PublishSingleFile=true `
-    -p:EnableCompressionInSingleFile=true `
-    -o "$DistPath\TrayApp"
+dotnet publish "$ProjectRoot\Agent.TrayApp\Agent.TrayApp.csproj" -c $Configuration -r $Runtime --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -o "$DistPath\TrayApp"
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "FAILED to publish Agent.TrayApp!" -ForegroundColor Red
@@ -39,13 +33,7 @@ if ($LASTEXITCODE -ne 0) {
 
 # 2. Publish Service (Background Windows Service)
 Write-Host "`n[2/2] Publishing Agent.Service (Windows Background Service)..." -ForegroundColor Green
-dotnet publish "$ProjectRoot\Agent.Service\Agent.Service.csproj" `
-    -c $Configuration `
-    -r $Runtime `
-    --self-contained true `
-    -p:PublishSingleFile=true `
-    -p:EnableCompressionInSingleFile=true `
-    -o "$DistPath\Service"
+dotnet publish "$ProjectRoot\Agent.Service\Agent.Service.csproj" -c $Configuration -r $Runtime --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -o "$DistPath\Service"
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "FAILED to publish Agent.Service!" -ForegroundColor Red

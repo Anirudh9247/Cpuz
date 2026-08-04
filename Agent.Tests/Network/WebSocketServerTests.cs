@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Sockets;
 using Agent.Network.Json;
 using Agent.Network.WebSocket;
 using Xunit;
@@ -7,12 +9,22 @@ namespace Agent.Tests.Network;
 [Collection("WebSocketTests")]
 public class WebSocketServerTests
 {
+    private static int GetFreeTcpPort()
+    {
+        var l = new TcpListener(IPAddress.Loopback, 0);
+        l.Start();
+        int port = ((IPEndPoint)l.LocalEndpoint).Port;
+        l.Stop();
+        return port;
+    }
+
     [Fact]
     public async Task AgentWebSocketServer_Starts_AcceptsConnection_And_BroadcastsMessage()
     {
         // Arrange
-        string serverUrl = "http://localhost:8089/ws/";
-        Uri clientUri = new Uri("ws://localhost:8089/ws/");
+        int port = GetFreeTcpPort();
+        string serverUrl = $"http://localhost:{port}/ws/";
+        Uri clientUri = new Uri($"ws://localhost:{port}/ws/");
 
         using var server = new AgentWebSocketServer();
         using var client = new AgentWebSocketClient();
@@ -56,8 +68,9 @@ public class WebSocketServerTests
     public async Task AgentWebSocketServer_MultipleClients_DisconnectOne_SurvivingClientReceivesBroadcast()
     {
         // Arrange
-        string serverUrl = "http://localhost:8097/ws/";
-        Uri clientUri = new Uri("ws://localhost:8097/ws/");
+        int port = GetFreeTcpPort();
+        string serverUrl = $"http://localhost:{port}/ws/";
+        Uri clientUri = new Uri($"ws://localhost:{port}/ws/");
 
         using var server = new AgentWebSocketServer();
         using var client1 = new AgentWebSocketClient();
